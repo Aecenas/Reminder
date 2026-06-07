@@ -1,0 +1,216 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "ccdfc0fa71e16d5feefe043a40e20763",
+    "entities": [
+      {
+        "tableName": "prescriptions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `startDate` TEXT NOT NULL, `endDate` TEXT, `enabled` INTEGER NOT NULL, `scheduleType` TEXT NOT NULL, `anchorDate` TEXT, `anchorDoseText` TEXT, `alternateDoseText` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startDate",
+            "columnName": "startDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endDate",
+            "columnName": "endDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduleType",
+            "columnName": "scheduleType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anchorDate",
+            "columnName": "anchorDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorDoseText",
+            "columnName": "anchorDoseText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "alternateDoseText",
+            "columnName": "alternateDoseText",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "prescription_times",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `prescriptionId` INTEGER NOT NULL, `time` TEXT NOT NULL, `doseText` TEXT NOT NULL, `mealTiming` TEXT NOT NULL, FOREIGN KEY(`prescriptionId`) REFERENCES `prescriptions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "prescriptionId",
+            "columnName": "prescriptionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time",
+            "columnName": "time",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "doseText",
+            "columnName": "doseText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mealTiming",
+            "columnName": "mealTiming",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_prescription_times_prescriptionId",
+            "unique": false,
+            "columnNames": [
+              "prescriptionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_prescription_times_prescriptionId` ON `${TABLE_NAME}` (`prescriptionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "prescriptions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "prescriptionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "intake_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`prescriptionId` INTEGER NOT NULL, `date` TEXT NOT NULL, `time` TEXT NOT NULL, `medicineNameSnapshot` TEXT NOT NULL, `doseTextSnapshot` TEXT NOT NULL, `taken` INTEGER NOT NULL, `confirmedAtMillis` INTEGER, PRIMARY KEY(`prescriptionId`, `date`, `time`))",
+        "fields": [
+          {
+            "fieldPath": "prescriptionId",
+            "columnName": "prescriptionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time",
+            "columnName": "time",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medicineNameSnapshot",
+            "columnName": "medicineNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "doseTextSnapshot",
+            "columnName": "doseTextSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taken",
+            "columnName": "taken",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAtMillis",
+            "columnName": "confirmedAtMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "prescriptionId",
+            "date",
+            "time"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_intake_records_date",
+            "unique": false,
+            "columnNames": [
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_intake_records_date` ON `${TABLE_NAME}` (`date`)"
+          },
+          {
+            "name": "index_intake_records_prescriptionId",
+            "unique": false,
+            "columnNames": [
+              "prescriptionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_intake_records_prescriptionId` ON `${TABLE_NAME}` (`prescriptionId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ccdfc0fa71e16d5feefe043a40e20763')"
+    ]
+  }
+}
