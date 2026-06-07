@@ -2228,7 +2228,7 @@ private fun PrescriptionEditorDialog(
                             onNameChange = onNameChange
                         )
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                                 DetailDateSectionTitle("开始日期", theme)
                                 DetailDateButton(
@@ -2246,7 +2246,7 @@ private fun PrescriptionEditorDialog(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
-                                    .width(20.dp)
+                                    .width(12.dp)
                                     .height(38.dp),
                                 textAlign = TextAlign.Center
                             )
@@ -2882,20 +2882,20 @@ private fun DetailDateButton(
             contentColor = theme.text
         ),
         border = BorderStroke(1.dp, theme.text.copy(alpha = 0.22f)),
-        contentPadding = PaddingValues(horizontal = 6.dp)
+        contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(15.dp))
-        Spacer(Modifier.width(4.dp))
+        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(3.dp))
         Text(
             dateText,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
         )
-        Spacer(Modifier.weight(1f))
-        Text("▾", color = theme.mutedText, fontWeight = FontWeight.Bold)
+        Text("▾", color = theme.mutedText, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -3089,28 +3089,28 @@ private fun Modifier.selectedSoftPill(shape: RoundedCornerShape): Modifier = thi
 private fun DetailPlanHeader(theme: VisualTheme) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         DetailPlanHeaderCell(
             iconRes = R.drawable.detail_clock_icon,
             text = "时间",
             theme = theme,
-            modifier = Modifier.weight(0.90f)
+            modifier = Modifier.weight(0.82f)
         )
         DetailPlanHeaderCell(
             iconRes = R.drawable.detail_dose_icon,
             text = "剂量",
             theme = theme,
-            modifier = Modifier.weight(0.78f)
+            modifier = Modifier.weight(0.68f)
         )
         DetailPlanHeaderCell(
             iconRes = R.drawable.detail_meal_icon,
             text = "与进食关系",
             theme = theme,
-            modifier = Modifier.weight(1.62f)
+            modifier = Modifier.weight(1.95f)
         )
-        Spacer(Modifier.width(22.dp))
+        Spacer(Modifier.width(18.dp))
     }
 }
 
@@ -3157,7 +3157,7 @@ private fun DetailPlanRow(
     var timePickerOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedButton(
@@ -3166,7 +3166,7 @@ private fun DetailPlanRow(
                 timePickerOpen = true
             },
             modifier = Modifier
-                .weight(0.90f)
+                .weight(0.82f)
                 .height(42.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(
@@ -3184,7 +3184,7 @@ private fun DetailPlanRow(
         if (alternating) {
             Surface(
                 modifier = Modifier
-                    .weight(0.78f)
+                    .weight(0.68f)
                     .height(42.dp),
                 color = Color(0xFFFFFBE8).copy(alpha = 0.62f),
                 contentColor = theme.text,
@@ -3200,21 +3200,21 @@ private fun DetailPlanRow(
                 value = input.doseText,
                 label = "",
                 theme = theme,
-                modifier = Modifier.weight(0.78f),
+                modifier = Modifier.weight(0.68f),
                 onValueChange = { onChange(input.copy(doseText = it)) }
             )
         }
 
         Surface(
             modifier = Modifier
-                .weight(1.62f)
+                .weight(1.95f)
                 .height(42.dp),
             color = Color(0xFFFFFBE8).copy(alpha = 0.56f),
             contentColor = theme.text,
             shape = RoundedCornerShape(12.dp),
             border = BorderStroke(1.dp, theme.text.copy(alpha = 0.14f))
         ) {
-            Row(Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(Modifier.padding(2.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                 MealTiming.entries.forEach { mealTiming ->
                     MealChipButton(
                         text = mealTiming.label,
@@ -3236,10 +3236,10 @@ private fun DetailPlanRow(
                 onDelete()
             },
             modifier = Modifier
-                .width(22.dp)
+                .width(18.dp)
                 .height(42.dp)
         ) {
-            Icon(Icons.Default.Delete, contentDescription = "删除第${index + 1}个时间", tint = theme.mutedText, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Delete, contentDescription = "删除第${index + 1}个时间", tint = theme.mutedText, modifier = Modifier.size(14.dp))
         }
     }
 
@@ -3490,15 +3490,15 @@ private fun PrescriptionCard(
             text = startText,
             color = muted,
             modifier = Modifier
-                .offset(x = maxWidth * 0.105f, y = maxHeight * 0.61f)
-                .width(maxWidth * 0.27f)
+                .offset(x = maxWidth * 0.090f, y = maxHeight * 0.61f)
+                .width(maxWidth * 0.345f)
         )
         CardDateText(
             text = endText,
             color = muted,
             modifier = Modifier
-                .offset(x = maxWidth * 0.105f, y = maxHeight * 0.72f)
-                .width(maxWidth * 0.27f)
+                .offset(x = maxWidth * 0.090f, y = maxHeight * 0.72f)
+                .width(maxWidth * 0.345f)
         )
         CardValueText(
             value = timeText.ifBlank { "-" },
