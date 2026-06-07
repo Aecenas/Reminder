@@ -56,6 +56,8 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -2371,118 +2373,67 @@ private fun FloralDatePickerDialog(
     onDismiss: () -> Unit,
     onConfirm: (LocalDate) -> Unit
 ) {
-    var selectedDate by remember(initialDate) { mutableStateOf(initialDate) }
-    var visibleMonth by remember(initialDate) { mutableStateOf(YearMonth.from(initialDate)) }
-    val cells = remember(visibleMonth) { calendarCells(visibleMonth) }
+    val currentYear = remember { LocalDate.now().year }
+    val years = remember(initialDate) {
+        val startYear = minOf(initialDate.year, currentYear - 20)
+        val endYear = maxOf(initialDate.year, currentYear + 30)
+        (startYear..endYear).toList()
+    }
+    val months = remember { (1..12).toList() }
+    var year by remember(initialDate) { mutableIntStateOf(initialDate.year) }
+    var month by remember(initialDate) { mutableIntStateOf(initialDate.monthValue) }
+    var day by remember(initialDate) { mutableIntStateOf(initialDate.dayOfMonth) }
+    val maxDay = remember(year, month) { YearMonth.of(year, month).lengthOfMonth() }
+    val days = remember(maxDay) { (1..maxDay).toList() }
     val sounds = LocalAppSounds.current
 
     FloralPickerFrame(
         title = title,
         theme = theme,
         onDismiss = onDismiss,
-        onConfirm = { onConfirm(selectedDate) }
+        onConfirm = { onConfirm(LocalDate.of(year, month, day.coerceAtMost(maxDay))) }
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {
-                sounds.play(SoundCue.SwitchLeaf)
-                visibleMonth = visibleMonth.minusMonths(1)
-            }) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = "上个月", tint = theme.text)
-            }
-            Text(
-                visibleMonth.format(MonthFormatter),
-                color = theme.text,
-                fontFamily = FontFamily.Serif,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = {
-                sounds.play(SoundCue.SwitchLeaf)
-                visibleMonth = visibleMonth.plusMonths(1)
-            }) {
-                Icon(Icons.Default.ChevronRight, contentDescription = "下个月", tint = theme.text)
-            }
-        }
-
-        Row(Modifier.fillMaxWidth()) {
-            WeekLabels.forEach { label ->
-                Text(
-                    label,
-                    color = theme.mutedText,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(7),
-            userScrollEnabled = false,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(246.dp)
-        ) {
-            items(cells, key = { it.date.toString() }) { cell ->
-                FloralDateCell(
-                    date = cell.date,
-                    visibleMonth = visibleMonth,
-                    selected = cell.date == selectedDate,
-                    theme = theme,
-                    onClick = {
-                        sounds.play(SoundCue.SelectDrop)
-                        selectedDate = cell.date
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloralDateCell(
-    date: LocalDate,
-    visibleMonth: YearMonth,
-    selected: Boolean,
-    theme: VisualTheme,
-    onClick: () -> Unit
-) {
-    val inMonth = YearMonth.from(date) == visibleMonth
-    val shape = RoundedCornerShape(12.dp)
-    Box(
-        modifier = Modifier
-            .padding(2.dp)
-            .aspectRatio(1f)
-            .alpha(if (inMonth) 1f else 0.32f)
-            .then(
-                if (selected) {
-                    Modifier.selectedSoftPill(shape)
-                } else {
-                    Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.44f), shape)
+            FloralDropdownSelect(
+                label = "年",
+                value = "${year}年",
+                options = years.map { it to "${it}年" },
+                theme = theme,
+                modifier = Modifier.weight(1.25f),
+                onSelected = { selectedYear ->
+                    sounds.play(SoundCue.SelectDrop)
+                    year = selectedYear
+                    day = day.coerceAtMost(YearMonth.of(year, month).lengthOfMonth())
                 }
             )
-            .border(
-                1.dp,
-                if (selected) Color.White.copy(alpha = 0.70f) else theme.text.copy(alpha = 0.12f),
-                shape
+            FloralDropdownSelect(
+                label = "月",
+                value = "${month}月",
+                options = months.map { it to "${it}月" },
+                theme = theme,
+                modifier = Modifier.weight(0.88f),
+                onSelected = { selectedMonth ->
+                    sounds.play(SoundCue.SelectDrop)
+                    month = selectedMonth
+                    day = day.coerceAtMost(YearMonth.of(year, month).lengthOfMonth())
+                }
             )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            date.dayOfMonth.toString(),
-            color = theme.text,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
+            FloralDropdownSelect(
+                label = "日",
+                value = "${day}日",
+                options = days.map { it to "${it}日" },
+                theme = theme,
+                modifier = Modifier.weight(0.88f),
+                onSelected = { selectedDay ->
+                    sounds.play(SoundCue.SelectDrop)
+                    day = selectedDay
+                }
+            )
+        }
     }
 }
 
@@ -2496,6 +2447,8 @@ private fun FloralTimePickerDialog(
 ) {
     var hour by remember(initialTime) { mutableIntStateOf(initialTime.hour) }
     var minute by remember(initialTime) { mutableIntStateOf(initialTime.minute) }
+    val hours = remember { (0..23).toList() }
+    val minutes = remember { (0..59).toList() }
     val sounds = LocalAppSounds.current
 
     FloralPickerFrame(
@@ -2504,163 +2457,119 @@ private fun FloralTimePickerDialog(
         onDismiss = onDismiss,
         onConfirm = { onConfirm(LocalTime.of(hour, minute)) }
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFFFFDF0).copy(alpha = 0.64f),
-            contentColor = theme.text,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, theme.text.copy(alpha = 0.14f))
-        ) {
-            Text(
-                "%02d:%02d".format(hour, minute),
-                color = theme.text,
-                fontFamily = FontFamily.Serif,
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
-        }
-
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FloralTimeStepper(
+            FloralDropdownSelect(
                 label = "小时",
                 value = "%02d".format(hour),
+                options = hours.map { it to "%02d".format(it) },
                 theme = theme,
                 modifier = Modifier.weight(1f),
-                onMinus = {
+                onSelected = { selectedHour ->
                     sounds.play(SoundCue.SelectDrop)
-                    hour = wrapClockValue(hour - 1, 24)
-                },
-                onPlus = {
-                    sounds.play(SoundCue.SelectDrop)
-                    hour = wrapClockValue(hour + 1, 24)
+                    hour = selectedHour
                 }
             )
-            FloralTimeStepper(
-                label = "分钟",
-                value = "%02d".format(minute),
-                theme = theme,
-                modifier = Modifier.weight(1f),
-                onMinus = {
-                    sounds.play(SoundCue.SelectDrop)
-                    minute = wrapClockValue(minute - 1, 60)
-                },
-                onPlus = {
-                    sounds.play(SoundCue.SelectDrop)
-                    minute = wrapClockValue(minute + 1, 60)
-                }
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(0, 15, 30, 45).forEach { quickMinute ->
-                FloralMinuteChip(
-                    text = "%02d".format(quickMinute),
-                    selected = minute == quickMinute,
-                    theme = theme,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        sounds.play(SoundCue.SelectDrop)
-                        minute = quickMinute
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloralTimeStepper(
-    label: String,
-    value: String,
-    theme: VisualTheme,
-    modifier: Modifier = Modifier,
-    onMinus: () -> Unit,
-    onPlus: () -> Unit
-) {
-    Surface(
-        modifier = modifier,
-        color = Color(0xFFFFFBE8).copy(alpha = 0.54f),
-        contentColor = theme.text,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, theme.text.copy(alpha = 0.16f))
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
             Text(
-                label,
-                color = theme.mutedText,
-                fontFamily = FontFamily.Serif,
-                style = MaterialTheme.typography.labelMedium,
+                ":",
+                color = theme.text,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FloralRoundControl(text = "-", theme = theme, onClick = onMinus)
-                Text(
-                    value,
-                    color = theme.text,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.width(34.dp)
-                )
-                FloralRoundControl(text = "+", theme = theme, onClick = onPlus)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloralRoundControl(text: String, theme: VisualTheme, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .size(28.dp)
-            .clickable(onClick = onClick),
-        color = Color(0xFFEAF4CE).copy(alpha = 0.82f),
-        contentColor = theme.text,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f))
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun FloralMinuteChip(
-    text: String,
-    selected: Boolean,
-    theme: VisualTheme,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        modifier = modifier
-            .height(36.dp)
-            .then(
-                if (selected) {
-                    Modifier.selectedSoftPill(shape)
-                } else {
-                    Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.54f), shape)
+            FloralDropdownSelect(
+                label = "分钟",
+                value = "%02d".format(minute),
+                options = minutes.map { it to "%02d".format(it) },
+                theme = theme,
+                modifier = Modifier.weight(1f),
+                onSelected = { selectedMinute ->
+                    sounds.play(SoundCue.SelectDrop)
+                    minute = selectedMinute
                 }
             )
-            .border(1.dp, theme.text.copy(alpha = if (selected) 0.24f else 0.12f), shape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        }
+    }
+}
+
+@Composable
+private fun <T> FloralDropdownSelect(
+    label: String,
+    value: String,
+    options: List<Pair<T, String>>,
+    theme: VisualTheme,
+    modifier: Modifier = Modifier,
+    onSelected: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(text, color = theme.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        Text(
+            label,
+            color = theme.mutedText,
+            fontFamily = FontFamily.Serif,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+        Box {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clickable { expanded = true },
+                color = Color(0xFFFFFDF0).copy(alpha = 0.68f),
+                contentColor = theme.text,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, theme.text.copy(alpha = 0.18f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        value,
+                        color = theme.text,
+                        fontFamily = FontFamily.Serif,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("▾", color = theme.mutedText, fontWeight = FontWeight.Bold)
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .background(Color(0xFFFFFBEA))
+                    .heightIn(max = 228.dp)
+            ) {
+                options.forEach { (rawValue, text) ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text,
+                                color = theme.text,
+                                fontFamily = FontFamily.Serif,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelected(rawValue)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2678,8 +2587,8 @@ private fun FloralPickerFrame(
     ) {
         Surface(
             modifier = Modifier
-                .padding(horizontal = 28.dp)
-                .fillMaxWidth(),
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth(0.88f),
             color = Color(0xFFFFFBEA).copy(alpha = 0.96f),
             contentColor = theme.text,
             shape = RoundedCornerShape(30.dp),
@@ -2689,9 +2598,9 @@ private fun FloralPickerFrame(
             Box {
                 DetailCornerDecor(theme)
                 Column(
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LeafMark(theme, modifier = Modifier.size(20.dp))
@@ -2766,8 +2675,6 @@ private fun FloralPickerButton(
         )
     }
 }
-
-private fun wrapClockValue(value: Int, modulus: Int): Int = ((value % modulus) + modulus) % modulus
 
 @Composable
 private fun DetailCornerDecor(theme: VisualTheme) {
