@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -2588,7 +2589,8 @@ private fun FloralPickerFrame(
         Surface(
             modifier = Modifier
                 .padding(horizontal = 24.dp)
-                .fillMaxWidth(0.88f),
+                .widthIn(max = 430.dp)
+                .fillMaxWidth(0.84f),
             color = Color(0xFFFFFBEA).copy(alpha = 0.96f),
             contentColor = theme.text,
             shape = RoundedCornerShape(30.dp),
@@ -2596,9 +2598,10 @@ private fun FloralPickerFrame(
             shadowElevation = 8.dp
         ) {
             Box {
-                DetailCornerDecor(theme)
                 Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
