@@ -1,7 +1,5 @@
 package com.ain.reminder.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -2177,21 +2175,8 @@ private fun PrescriptionEditorDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
-    val context = LocalContext.current
     val sounds = LocalAppSounds.current
-    fun showDatePicker(initialDate: LocalDate, onPicked: (LocalDate) -> Unit) {
-        sounds.play(SoundCue.SelectDrop)
-        DatePickerDialog(
-            context,
-            { _, year, month, day ->
-                sounds.play(SoundCue.SelectDrop)
-                onPicked(LocalDate.of(year, month + 1, day))
-            },
-            initialDate.year,
-            initialDate.monthValue - 1,
-            initialDate.dayOfMonth
-        ).show()
-    }
+    var datePickerTarget by remember { mutableStateOf<PrescriptionDateTarget?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -2246,7 +2231,10 @@ private fun PrescriptionEditorDialog(
                                 DetailDateButton(
                                     dateText = startDate.format(IsoDateFormatter),
                                     theme = theme,
-                                    onClick = { showDatePicker(startDate, onStartDateChange) }
+                                    onClick = {
+                                        sounds.play(SoundCue.SelectDrop)
+                                        datePickerTarget = PrescriptionDateTarget.Start
+                                    }
                                 )
                             }
                             Text(
@@ -2264,7 +2252,10 @@ private fun PrescriptionEditorDialog(
                                 DetailDateButton(
                                     dateText = endDate.format(IsoDateFormatter),
                                     theme = theme,
-                                    onClick = { showDatePicker(endDate, onEndDateChange) }
+                                    onClick = {
+                                        sounds.play(SoundCue.SelectDrop)
+                                        datePickerTarget = PrescriptionDateTarget.End
+                                    }
                                 )
                             }
                         }
@@ -2344,7 +2335,439 @@ private fun PrescriptionEditorDialog(
             }
         }
     }
+
+    datePickerTarget?.let { target ->
+        FloralDatePickerDialog(
+            title = if (target == PrescriptionDateTarget.Start) "选择开始日期" else "选择结束日期",
+            initialDate = if (target == PrescriptionDateTarget.Start) startDate else endDate,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                datePickerTarget = null
+            },
+            onConfirm = { pickedDate ->
+                sounds.play(SoundCue.SelectDrop)
+                if (target == PrescriptionDateTarget.Start) {
+                    onStartDateChange(pickedDate)
+                } else {
+                    onEndDateChange(pickedDate)
+                }
+                datePickerTarget = null
+            }
+        )
+    }
 }
+
+private enum class PrescriptionDateTarget {
+    Start,
+    End
+}
+
+@Composable
+private fun FloralDatePickerDialog(
+    title: String,
+    initialDate: LocalDate,
+    theme: VisualTheme,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalDate) -> Unit
+) {
+    var selectedDate by remember(initialDate) { mutableStateOf(initialDate) }
+    var visibleMonth by remember(initialDate) { mutableStateOf(YearMonth.from(initialDate)) }
+    val cells = remember(visibleMonth) { calendarCells(visibleMonth) }
+    val sounds = LocalAppSounds.current
+
+    FloralPickerFrame(
+        title = title,
+        theme = theme,
+        onDismiss = onDismiss,
+        onConfirm = { onConfirm(selectedDate) }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            IconButton(onClick = {
+                sounds.play(SoundCue.SwitchLeaf)
+                visibleMonth = visibleMonth.minusMonths(1)
+            }) {
+                Icon(Icons.Default.ChevronLeft, contentDescription = "上个月", tint = theme.text)
+            }
+            Text(
+                visibleMonth.format(MonthFormatter),
+                color = theme.text,
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = {
+                sounds.play(SoundCue.SwitchLeaf)
+                visibleMonth = visibleMonth.plusMonths(1)
+            }) {
+                Icon(Icons.Default.ChevronRight, contentDescription = "下个月", tint = theme.text)
+            }
+        }
+
+        Row(Modifier.fillMaxWidth()) {
+            WeekLabels.forEach { label ->
+                Text(
+                    label,
+                    color = theme.mutedText,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(7),
+            userScrollEnabled = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(246.dp)
+        ) {
+            items(cells, key = { it.date.toString() }) { cell ->
+                FloralDateCell(
+                    date = cell.date,
+                    visibleMonth = visibleMonth,
+                    selected = cell.date == selectedDate,
+                    theme = theme,
+                    onClick = {
+                        sounds.play(SoundCue.SelectDrop)
+                        selectedDate = cell.date
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloralDateCell(
+    date: LocalDate,
+    visibleMonth: YearMonth,
+    selected: Boolean,
+    theme: VisualTheme,
+    onClick: () -> Unit
+) {
+    val inMonth = YearMonth.from(date) == visibleMonth
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier = Modifier
+            .padding(2.dp)
+            .aspectRatio(1f)
+            .alpha(if (inMonth) 1f else 0.32f)
+            .then(
+                if (selected) {
+                    Modifier.selectedSoftPill(shape)
+                } else {
+                    Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.44f), shape)
+                }
+            )
+            .border(
+                1.dp,
+                if (selected) Color.White.copy(alpha = 0.70f) else theme.text.copy(alpha = 0.12f),
+                shape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            date.dayOfMonth.toString(),
+            color = theme.text,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun FloralTimePickerDialog(
+    title: String,
+    initialTime: LocalTime,
+    theme: VisualTheme,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalTime) -> Unit
+) {
+    var hour by remember(initialTime) { mutableIntStateOf(initialTime.hour) }
+    var minute by remember(initialTime) { mutableIntStateOf(initialTime.minute) }
+    val sounds = LocalAppSounds.current
+
+    FloralPickerFrame(
+        title = title,
+        theme = theme,
+        onDismiss = onDismiss,
+        onConfirm = { onConfirm(LocalTime.of(hour, minute)) }
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFFFFDF0).copy(alpha = 0.64f),
+            contentColor = theme.text,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, theme.text.copy(alpha = 0.14f))
+        ) {
+            Text(
+                "%02d:%02d".format(hour, minute),
+                color = theme.text,
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FloralTimeStepper(
+                label = "小时",
+                value = "%02d".format(hour),
+                theme = theme,
+                modifier = Modifier.weight(1f),
+                onMinus = {
+                    sounds.play(SoundCue.SelectDrop)
+                    hour = wrapClockValue(hour - 1, 24)
+                },
+                onPlus = {
+                    sounds.play(SoundCue.SelectDrop)
+                    hour = wrapClockValue(hour + 1, 24)
+                }
+            )
+            FloralTimeStepper(
+                label = "分钟",
+                value = "%02d".format(minute),
+                theme = theme,
+                modifier = Modifier.weight(1f),
+                onMinus = {
+                    sounds.play(SoundCue.SelectDrop)
+                    minute = wrapClockValue(minute - 1, 60)
+                },
+                onPlus = {
+                    sounds.play(SoundCue.SelectDrop)
+                    minute = wrapClockValue(minute + 1, 60)
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(0, 15, 30, 45).forEach { quickMinute ->
+                FloralMinuteChip(
+                    text = "%02d".format(quickMinute),
+                    selected = minute == quickMinute,
+                    theme = theme,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        sounds.play(SoundCue.SelectDrop)
+                        minute = quickMinute
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloralTimeStepper(
+    label: String,
+    value: String,
+    theme: VisualTheme,
+    modifier: Modifier = Modifier,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xFFFFFBE8).copy(alpha = 0.54f),
+        contentColor = theme.text,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, theme.text.copy(alpha = 0.16f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                label,
+                color = theme.mutedText,
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FloralRoundControl(text = "-", theme = theme, onClick = onMinus)
+                Text(
+                    value,
+                    color = theme.text,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(34.dp)
+                )
+                FloralRoundControl(text = "+", theme = theme, onClick = onPlus)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloralRoundControl(text: String, theme: VisualTheme, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .size(28.dp)
+            .clickable(onClick = onClick),
+        color = Color(0xFFEAF4CE).copy(alpha = 0.82f),
+        contentColor = theme.text,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun FloralMinuteChip(
+    text: String,
+    selected: Boolean,
+    theme: VisualTheme,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = modifier
+            .height(36.dp)
+            .then(
+                if (selected) {
+                    Modifier.selectedSoftPill(shape)
+                } else {
+                    Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.54f), shape)
+                }
+            )
+            .border(1.dp, theme.text.copy(alpha = if (selected) 0.24f else 0.12f), shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = theme.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun FloralPickerFrame(
+    title: String,
+    theme: VisualTheme,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 28.dp)
+                .fillMaxWidth(),
+            color = Color(0xFFFFFBEA).copy(alpha = 0.96f),
+            contentColor = theme.text,
+            shape = RoundedCornerShape(30.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
+            shadowElevation = 8.dp
+        ) {
+            Box {
+                DetailCornerDecor(theme)
+                Column(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LeafMark(theme, modifier = Modifier.size(20.dp))
+                        Text(
+                            title,
+                            color = theme.text,
+                            fontFamily = FontFamily.Serif,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        LeafMark(theme, modifier = Modifier.size(20.dp))
+                    }
+                    HorizontalDivider(color = theme.text.copy(alpha = 0.14f), thickness = 0.7.dp)
+                    content()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        FloralPickerButton(
+                            text = "取消",
+                            primary = false,
+                            theme = theme,
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss
+                        )
+                        FloralPickerButton(
+                            text = "确定",
+                            primary = true,
+                            theme = theme,
+                            modifier = Modifier.weight(1f),
+                            onClick = onConfirm
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloralPickerButton(
+    text: String,
+    primary: Boolean,
+    theme: VisualTheme,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .then(
+                if (primary) {
+                    Modifier.selectedSoftPill(shape)
+                } else {
+                    Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.70f), shape)
+                }
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.74f), shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = theme.text,
+            fontFamily = FontFamily.Serif,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
+}
+
+private fun wrapClockValue(value: Int, modulus: Int): Int = ((value % modulus) + modulus) % modulus
 
 @Composable
 private fun DetailCornerDecor(theme: VisualTheme) {
@@ -2610,21 +3033,8 @@ private fun DetailSchedulePanel(
     onAnchorDoseChange: (String) -> Unit,
     onAlternateDoseChange: (String) -> Unit
 ) {
-    val context = LocalContext.current
     val sounds = LocalAppSounds.current
-    fun showAnchorPicker() {
-        sounds.play(SoundCue.SelectDrop)
-        DatePickerDialog(
-            context,
-            { _, year, month, day ->
-                sounds.play(SoundCue.SelectDrop)
-                onAnchorDateChange(LocalDate.of(year, month + 1, day))
-            },
-            anchorDate.year,
-            anchorDate.monthValue - 1,
-            anchorDate.dayOfMonth
-        ).show()
-    }
+    var anchorPickerOpen by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -2662,7 +3072,10 @@ private fun DetailSchedulePanel(
                     DetailDateButton(
                         dateText = "锚点 ${anchorDate.format(IsoDateFormatter)}",
                         theme = theme,
-                        onClick = ::showAnchorPicker
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            anchorPickerOpen = true
+                        }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         DetailLabeledCompactTextField(
@@ -2683,6 +3096,23 @@ private fun DetailSchedulePanel(
                 }
             }
         }
+    }
+
+    if (anchorPickerOpen) {
+        FloralDatePickerDialog(
+            title = "选择锚点日期",
+            initialDate = anchorDate,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                anchorPickerOpen = false
+            },
+            onConfirm = { pickedDate ->
+                sounds.play(SoundCue.SelectDrop)
+                onAnchorDateChange(pickedDate)
+                anchorPickerOpen = false
+            }
+        )
     }
 }
 
@@ -2813,8 +3243,8 @@ private fun DetailPlanRow(
     onChange: (PrescriptionTimeInput) -> Unit,
     onDelete: () -> Unit
 ) {
-    val context = LocalContext.current
     val sounds = LocalAppSounds.current
+    var timePickerOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2823,16 +3253,7 @@ private fun DetailPlanRow(
         OutlinedButton(
             onClick = {
                 sounds.play(SoundCue.SelectDrop)
-                TimePickerDialog(
-                    context,
-                    { _, hour, minute ->
-                        sounds.play(SoundCue.SelectDrop)
-                        onChange(input.copy(time = LocalTime.of(hour, minute)))
-                    },
-                    input.time.hour,
-                    input.time.minute,
-                    true
-                ).show()
+                timePickerOpen = true
             },
             modifier = Modifier
                 .weight(0.90f)
@@ -2910,6 +3331,23 @@ private fun DetailPlanRow(
         ) {
             Icon(Icons.Default.Delete, contentDescription = "删除第${index + 1}个时间", tint = theme.mutedText, modifier = Modifier.size(16.dp))
         }
+    }
+
+    if (timePickerOpen) {
+        FloralTimePickerDialog(
+            title = "选择服药时间",
+            initialTime = input.time,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                timePickerOpen = false
+            },
+            onConfirm = { pickedTime ->
+                sounds.play(SoundCue.SelectDrop)
+                onChange(input.copy(time = pickedTime))
+                timePickerOpen = false
+            }
+        )
     }
 }
 
@@ -3257,22 +3695,34 @@ private fun DateButton(
     modifier: Modifier = Modifier.fillMaxWidth(),
     onDatePicked: (LocalDate) -> Unit
 ) {
-    val context = LocalContext.current
+    var pickerOpen by remember { mutableStateOf(false) }
+    val sounds = LocalAppSounds.current
     OutlinedButton(
         onClick = {
-            DatePickerDialog(
-                context,
-                { _, year, month, day -> onDatePicked(LocalDate.of(year, month + 1, day)) },
-                date.year,
-                date.monthValue - 1,
-                date.dayOfMonth
-            ).show()
+            sounds.play(SoundCue.SelectDrop)
+            pickerOpen = true
         },
         modifier = modifier,
         colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.text),
         border = BorderStroke(1.dp, theme.text.copy(alpha = 0.28f))
     ) {
         Text("$label：${date.format(DateFormatter)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (pickerOpen) {
+        FloralDatePickerDialog(
+            title = label,
+            initialDate = date,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                pickerOpen = false
+            },
+            onConfirm = { pickedDate ->
+                sounds.play(SoundCue.SelectDrop)
+                onDatePicked(pickedDate)
+                pickerOpen = false
+            }
+        )
     }
 }
 
@@ -3285,7 +3735,8 @@ private fun TimeDoseRow(
     onChange: (PrescriptionTimeInput) -> Unit,
     onDelete: () -> Unit
 ) {
-    val context = LocalContext.current
+    val sounds = LocalAppSounds.current
+    var timePickerOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFFFFFAE3).copy(alpha = 0.62f),
@@ -3316,13 +3767,8 @@ private fun TimeDoseRow(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(
                     onClick = {
-                        TimePickerDialog(
-                            context,
-                            { _, hour, minute -> onChange(input.copy(time = LocalTime.of(hour, minute))) },
-                            input.time.hour,
-                            input.time.minute,
-                            true
-                        ).show()
+                        sounds.play(SoundCue.SelectDrop)
+                        timePickerOpen = true
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.text),
                     border = BorderStroke(1.dp, theme.text.copy(alpha = 0.28f)),
@@ -3368,6 +3814,22 @@ private fun TimeDoseRow(
                 }
             }
         }
+    }
+    if (timePickerOpen) {
+        FloralTimePickerDialog(
+            title = "选择服药时间",
+            initialTime = input.time,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                timePickerOpen = false
+            },
+            onConfirm = { pickedTime ->
+                sounds.play(SoundCue.SelectDrop)
+                onChange(input.copy(time = pickedTime))
+                timePickerOpen = false
+            }
+        )
     }
 }
 
