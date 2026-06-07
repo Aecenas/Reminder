@@ -1440,10 +1440,10 @@ private fun CalendarDetailPanel(selectedDate: LocalDate, groups: List<DoseGroup>
                     )
                 }
                 Text(
-                    "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日 · 服药情况",
+                    "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日",
                     color = theme.text,
                     fontFamily = FontFamily.Serif,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1647,7 +1647,7 @@ private fun CalendarMedicineDetailCard(medicine: CalendarMedicineGroup, theme: V
                     medicine.name,
                     color = theme.text,
                     fontFamily = FontFamily.Serif,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -1673,10 +1673,10 @@ private fun CalendarDetailHeaderRow(theme: VisualTheme) {
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CalendarHeaderText("时间", theme, Modifier.weight(1.12f))
-        CalendarHeaderText("剂量", theme, Modifier.weight(0.95f))
-        CalendarHeaderText("与进食关系", theme, Modifier.weight(1.18f))
-        CalendarHeaderText("状态", theme, Modifier.weight(1.05f))
+        CalendarHeaderText("时间", theme, Modifier.weight(1.08f))
+        CalendarHeaderText("剂量", theme, Modifier.weight(0.92f))
+        CalendarHeaderText("与进食关系", theme, Modifier.weight(1.28f))
+        CalendarHeaderText("状态", theme, Modifier.weight(1.00f))
     }
 }
 
@@ -1688,7 +1688,7 @@ private fun CalendarHeaderText(text: String, theme: VisualTheme, modifier: Modif
         color = theme.text.copy(alpha = 0.88f),
         textAlign = TextAlign.Center,
         fontFamily = FontFamily.Serif,
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold
     )
 }
@@ -1708,7 +1708,7 @@ private fun CalendarIntakeRow(item: PlannedIntake, theme: VisualTheme) {
         ) {
             Row(
                 modifier = Modifier
-                    .weight(1.12f)
+                    .weight(1.08f)
                     .padding(vertical = 7.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
@@ -1716,37 +1716,37 @@ private fun CalendarIntakeRow(item: PlannedIntake, theme: VisualTheme) {
                 Image(
                     painter = painterResource(R.drawable.detail_clock_icon),
                     contentDescription = null,
-                    modifier = Modifier.size(17.dp)
+                    modifier = Modifier.size(13.dp)
                 )
                 Text(
                     item.time.format(TimeFormatter),
                     color = Color(0xFF171717),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 6.dp),
+                    modifier = Modifier.padding(start = 4.dp),
                     maxLines = 1
                 )
             }
             Text(
                 item.doseText,
-                modifier = Modifier.weight(0.95f),
+                modifier = Modifier.weight(0.92f),
                 color = Color(0xFF171717),
                 textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 item.mealTiming.label,
-                modifier = Modifier.weight(1.18f),
+                modifier = Modifier.weight(1.28f),
                 color = Color(0xFF171717),
                 textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
-            CalendarTakenPill(taken = item.taken, theme = theme, modifier = Modifier.weight(1.05f))
+            CalendarTakenPill(taken = item.taken, theme = theme, modifier = Modifier.weight(1.00f))
         }
     }
 }
@@ -1756,14 +1756,14 @@ private fun CalendarTakenPill(taken: Boolean, theme: VisualTheme, modifier: Modi
     val borderColor = if (taken) Color(0xFF7F985D) else Color(0xFFE0AA45)
     val textColor = if (taken) theme.text else Color(0xFF9A6C18)
     Surface(
-        modifier = modifier.padding(end = 5.dp, top = 5.dp, bottom = 5.dp),
+        modifier = modifier.padding(end = 4.dp, top = 5.dp, bottom = 5.dp),
         color = Color(0xFFFFFDF0).copy(alpha = 0.78f),
         contentColor = textColor,
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, borderColor.copy(alpha = 0.78f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1771,12 +1771,12 @@ private fun CalendarTakenPill(taken: Boolean, theme: VisualTheme, modifier: Modi
                 if (taken) Icons.Default.CheckCircle else Icons.Default.NotificationsNone,
                 contentDescription = if (taken) "已服" else "待服",
                 tint = if (taken) Color(0xFF4C8B45) else Color(0xFFA16B16),
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(12.dp)
             )
             Text(
                 if (taken) "已服" else "待服",
-                modifier = Modifier.padding(start = 5.dp),
-                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
@@ -2252,7 +2252,7 @@ private fun PrescriptionEditorDialog(
                             Text(
                                 "~",
                                 color = theme.text,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
                                     .width(20.dp)
@@ -2409,7 +2409,7 @@ private fun DetailHeader(
                     color = Color(0xFF214B29),
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.titleLarge
                 )
                 LeafMark(theme)
             }
@@ -2435,7 +2435,7 @@ private fun DetailSectionTitle(title: String, theme: VisualTheme) {
             color = Color(0xFF214B29),
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleSmall
         )
     }
 }
@@ -2478,7 +2478,7 @@ private fun DetailDateSectionTitle(title: String, theme: VisualTheme) {
             color = Color(0xFF214B29),
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleSmall
         )
     }
 }
@@ -2510,7 +2510,7 @@ private fun DetailNameField(
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                textStyle = MaterialTheme.typography.titleLarge.copy(
+                textStyle = MaterialTheme.typography.titleMedium.copy(
                     color = theme.text,
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold
@@ -2520,7 +2520,7 @@ private fun DetailNameField(
                         Text(
                             "请输入药名",
                             color = theme.mutedText.copy(alpha = 0.70f),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             maxLines = 1
                         )
                     }
@@ -2549,15 +2549,15 @@ private fun DetailDateButton(
             contentColor = theme.text
         ),
         border = BorderStroke(1.dp, theme.text.copy(alpha = 0.22f)),
-        contentPadding = PaddingValues(horizontal = 7.dp)
+        contentPadding = PaddingValues(horizontal = 6.dp)
     ) {
-        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(17.dp))
-        Spacer(Modifier.width(5.dp))
+        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(4.dp))
         Text(
             dateText,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -2593,7 +2593,7 @@ private fun DetailSmallChip(
             if (selected) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(15.dp))
             }
-            Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -2719,7 +2719,7 @@ private fun DetailModeButton(
                     Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(7.dp))
                 }
-                Text(text, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(text, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -2790,14 +2790,14 @@ private fun DetailPlanHeaderCell(
             painter = painterResource(iconRes),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(14.dp)
         )
-        Spacer(Modifier.width(5.dp))
+        Spacer(Modifier.width(3.dp))
         Text(
             text,
             color = theme.mutedText,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -2843,9 +2843,9 @@ private fun DetailPlanRow(
                 contentColor = theme.text
             ),
             border = BorderStroke(1.dp, theme.text.copy(alpha = 0.18f)),
-            contentPadding = PaddingValues(horizontal = 8.dp)
+            contentPadding = PaddingValues(horizontal = 6.dp)
         ) {
-            Text(input.time.format(TimeFormatter), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            Text(input.time.format(TimeFormatter), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             Spacer(Modifier.width(3.dp))
             Text("▾", color = theme.mutedText)
         }
@@ -2861,7 +2861,7 @@ private fun DetailPlanRow(
                 border = BorderStroke(1.dp, theme.text.copy(alpha = 0.18f))
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text("交替", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Text("交替", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
                 }
             }
         } else {
@@ -2939,7 +2939,7 @@ private fun MealChipButton(
                 .then(if (selected) Modifier.selectedSoftPill(shape) else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
@@ -2994,7 +2994,7 @@ private fun DetailCompactTextField(
                     .fillMaxSize()
                     .padding(horizontal = 10.dp, vertical = 10.dp),
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                textStyle = MaterialTheme.typography.bodySmall.copy(
                     color = theme.text,
                     fontWeight = FontWeight.Bold
                 )
@@ -3009,7 +3009,7 @@ private fun DetailCompactTextField(
         modifier = modifier.height(42.dp),
         label = { Text(label) },
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(
+        textStyle = MaterialTheme.typography.bodySmall.copy(
             color = theme.text,
             fontWeight = FontWeight.Bold
         ),
@@ -3047,7 +3047,7 @@ private fun DetailAddSlotButton(theme: VisualTheme, onClick: () -> Unit) {
                 color = theme.text,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.bodyMedium
             )
         }
     }
@@ -3130,7 +3130,7 @@ private fun PrescriptionCard(
             color = mainText,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.titleLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -3205,7 +3205,7 @@ private fun CardDateText(text: String, color: Color, modifier: Modifier = Modifi
         color = color,
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Bold,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelSmall,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Start,
@@ -3225,7 +3225,7 @@ private fun CardValueText(value: String, color: Color, modifier: Modifier = Modi
             color = color,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
