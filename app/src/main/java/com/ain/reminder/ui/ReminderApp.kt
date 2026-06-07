@@ -2247,7 +2247,8 @@ private fun PrescriptionEditorDialog(
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
                                     .width(12.dp)
-                                    .height(38.dp),
+                                    .height(38.dp)
+                                    .offset(y = 4.dp),
                                 textAlign = TextAlign.Center
                             )
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -3096,21 +3097,21 @@ private fun DetailPlanHeader(theme: VisualTheme) {
             iconRes = R.drawable.detail_clock_icon,
             text = "时间",
             theme = theme,
-            modifier = Modifier.weight(0.82f)
+            modifier = Modifier.weight(0.98f)
         )
         DetailPlanHeaderCell(
             iconRes = R.drawable.detail_dose_icon,
             text = "剂量",
             theme = theme,
-            modifier = Modifier.weight(0.68f)
+            modifier = Modifier.weight(0.76f)
         )
         DetailPlanHeaderCell(
             iconRes = R.drawable.detail_meal_icon,
             text = "与进食关系",
             theme = theme,
-            modifier = Modifier.weight(1.95f)
+            modifier = Modifier.weight(1.82f)
         )
-        Spacer(Modifier.width(18.dp))
+        Spacer(Modifier.width(14.dp))
     }
 }
 
@@ -3166,7 +3167,7 @@ private fun DetailPlanRow(
                 timePickerOpen = true
             },
             modifier = Modifier
-                .weight(0.82f)
+                .weight(0.98f)
                 .height(42.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(
@@ -3174,17 +3175,17 @@ private fun DetailPlanRow(
                 contentColor = theme.text
             ),
             border = BorderStroke(1.dp, theme.text.copy(alpha = 0.18f)),
-            contentPadding = PaddingValues(horizontal = 6.dp)
+            contentPadding = PaddingValues(horizontal = 2.dp)
         ) {
             Text(input.time.format(TimeFormatter), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            Spacer(Modifier.width(3.dp))
-            Text("▾", color = theme.mutedText)
+            Spacer(Modifier.width(1.dp))
+            Text("▾", color = theme.mutedText, style = MaterialTheme.typography.labelSmall)
         }
 
         if (alternating) {
             Surface(
                 modifier = Modifier
-                    .weight(0.68f)
+                    .weight(0.76f)
                     .height(42.dp),
                 color = Color(0xFFFFFBE8).copy(alpha = 0.62f),
                 contentColor = theme.text,
@@ -3200,14 +3201,14 @@ private fun DetailPlanRow(
                 value = input.doseText,
                 label = "",
                 theme = theme,
-                modifier = Modifier.weight(0.68f),
+                modifier = Modifier.weight(0.76f),
                 onValueChange = { onChange(input.copy(doseText = it)) }
             )
         }
 
         Surface(
             modifier = Modifier
-                .weight(1.95f)
+                .weight(1.82f)
                 .height(42.dp),
             color = Color(0xFFFFFBE8).copy(alpha = 0.56f),
             contentColor = theme.text,
@@ -3236,10 +3237,10 @@ private fun DetailPlanRow(
                 onDelete()
             },
             modifier = Modifier
-                .width(18.dp)
+                .width(14.dp)
                 .height(42.dp)
         ) {
-            Icon(Icons.Default.Delete, contentDescription = "删除第${index + 1}个时间", tint = theme.mutedText, modifier = Modifier.size(14.dp))
+            Icon(Icons.Default.Delete, contentDescription = "删除第${index + 1}个时间", tint = theme.mutedText, modifier = Modifier.size(13.dp))
         }
     }
 
@@ -3340,11 +3341,12 @@ private fun DetailCompactTextField(
                 onValueChange = onValueChange,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                    .padding(horizontal = 4.dp, vertical = 11.dp),
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(
+                textStyle = MaterialTheme.typography.labelSmall.copy(
                     color = theme.text,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
                 )
             )
         }
