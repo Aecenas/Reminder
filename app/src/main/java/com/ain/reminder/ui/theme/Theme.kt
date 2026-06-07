@@ -5,8 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 
 private val LightColors: ColorScheme = lightColorScheme(
@@ -40,10 +44,17 @@ private val ReminderShapes = Shapes(
 
 @Composable
 fun ReminderTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = LightColors,
-        shapes = ReminderShapes,
-        typography = MaterialTheme.typography,
-        content = content
-    )
+    val currentDensity = LocalDensity.current
+    val fixedFontDensity = remember(currentDensity.density) {
+        Density(density = currentDensity.density, fontScale = 1f)
+    }
+
+    CompositionLocalProvider(LocalDensity provides fixedFontDensity) {
+        MaterialTheme(
+            colorScheme = LightColors,
+            shapes = ReminderShapes,
+            typography = MaterialTheme.typography,
+            content = content
+        )
+    }
 }
