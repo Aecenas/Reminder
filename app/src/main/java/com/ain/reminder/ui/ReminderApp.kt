@@ -1,5 +1,10 @@
 package com.ain.reminder.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -54,6 +59,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -125,6 +131,10 @@ import com.ain.reminder.data.PrescriptionTimeInput
 import com.ain.reminder.data.PrescriptionWithTimes
 import com.ain.reminder.data.ScheduleType
 import com.ain.reminder.notifications.AlarmScheduler
+import com.ain.reminder.notifications.ReminderNotifications
+import com.ain.reminder.updates.GitHubUpdateService
+import com.ain.reminder.updates.UpdateCheckResult
+import com.ain.reminder.updates.UpdateInfo
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -428,6 +438,7 @@ private fun ReminderScreen(
     var initialSelectionApplied by remember { mutableStateOf(false) }
     var locallyCompletedGroupKey by remember { mutableStateOf<String?>(null) }
     var detailGroup by remember { mutableStateOf<DoseGroup?>(null) }
+    var appSettingsOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(groups.size) {
         selectedIndex = selectedIndex.coerceIn(0, (groups.size - 1).coerceAtLeast(0))
@@ -459,7 +470,20 @@ private fun ReminderScreen(
                 .padding(top = 42.dp, bottom = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            ReminderDateLabel(date = today, theme = theme, modifier = Modifier.align(Alignment.Start))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ReminderDateLabel(date = today, theme = theme)
+                ReminderSettingsButton(
+                    theme = theme,
+                    onClick = {
+                        sounds.play(SoundCue.OpenBloom)
+                        appSettingsOpen = true
+                    }
+                )
+            }
 
             Spacer(Modifier.weight(0.20f))
 
@@ -509,6 +533,17 @@ private fun ReminderScreen(
         }
     }
 
+    if (appSettingsOpen) {
+        ReminderAppSettingsDialog(
+            alarmScheduler = alarmScheduler,
+            theme = theme,
+            onDismiss = {
+                sounds.play(SoundCue.CloseSoft)
+                appSettingsOpen = false
+            }
+        )
+    }
+
     detailGroup?.let { doseGroup ->
         ReminderGroupDetailDialog(
             group = doseGroup,
@@ -554,6 +589,263 @@ private fun ReminderDateLabel(date: LocalDate, theme: VisualTheme, modifier: Mod
             fontWeight = FontWeight.Bold,
             maxLines = 1
         )
+    }
+}
+
+@Composable
+private fun ReminderSettingsButton(theme: VisualTheme, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .size(42.dp)
+            .clickable(onClick = onClick),
+        color = Color(0xFFFFFBEA).copy(alpha = 0.50f),
+        contentColor = theme.text,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.48f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Settings, contentDescription = "应用设置", modifier = Modifier.size(22.dp))
+        }
+    }
+}
+
+@Composable
+private fun ReminderAppSettingsDialog(
+    alarmScheduler: AlarmScheduler,
+    theme: VisualTheme,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val sounds = LocalAppSounds.current
+    var updateStatus by remember { mutableStateOf("尚未检查更新") }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    val notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
+    val exactAlarmAllowed = alarmScheduler.canScheduleExactAlarms()
+    val currentVersion = remember { GitHubUpdateService.currentVersionName(context) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFFFFBEA).copy(alpha = 0.97f),
+            contentColor = theme.text,
+            shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LeafMark(theme, modifier = Modifier.size(20.dp))
+                    Text(
+                        "应用设置",
+                        color = theme.text,
+                        fontFamily = FontFamily.Serif,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    LeafMark(theme, modifier = Modifier.size(20.dp))
+                }
+
+                HorizontalDivider(color = theme.text.copy(alpha = 0.14f), thickness = 0.7.dp)
+
+                SettingsStatusLine(
+                    title = "通知权限",
+                    value = if (notificationsAllowed) "已开启" else "未开启",
+                    theme = theme
+                )
+                SettingsActionButton(
+                    text = if (notificationsAllowed) "打开通知设置" else "去开启通知权限",
+                    primary = !notificationsAllowed,
+                    theme = theme,
+                    onClick = {
+                        sounds.play(SoundCue.SelectDrop)
+                        context.startActivity(notificationSettingsIntent(context))
+                    }
+                )
+                SettingsActionButton(
+                    text = "发送测试通知",
+                    primary = false,
+                    theme = theme,
+                    onClick = {
+                        sounds.play(SoundCue.SelectDrop)
+                        val sent = ReminderNotifications.showTestNotification(context)
+                        Toast.makeText(
+                            context,
+                            if (sent) "已发送测试通知。" else "通知权限未开启，无法发送测试通知。",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+
+                SettingsStatusLine(
+                    title = "准点提醒权限",
+                    value = if (exactAlarmAllowed) "已允许" else "建议开启",
+                    theme = theme
+                )
+                SettingsActionButton(
+                    text = "打开闹钟提醒权限",
+                    primary = !exactAlarmAllowed,
+                    theme = theme,
+                    onClick = {
+                        sounds.play(SoundCue.SelectDrop)
+                        alarmScheduler.exactAlarmSettingsIntent()?.let { runCatching { context.startActivity(it) } }
+                    }
+                )
+
+                HorizontalDivider(color = theme.text.copy(alpha = 0.14f), thickness = 0.7.dp)
+
+                SettingsStatusLine(title = "当前版本", value = currentVersion, theme = theme)
+                Text(
+                    updateStatus,
+                    color = theme.mutedText,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    SettingsActionButton(
+                        text = if (checkingUpdate) "检查中..." else "检查更新",
+                        primary = updateInfo == null,
+                        theme = theme,
+                        modifier = Modifier.weight(1f),
+                        enabled = !checkingUpdate,
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            checkingUpdate = true
+                            updateStatus = "正在连接 GitHub..."
+                            scope.launch {
+                                when (val result = GitHubUpdateService.checkLatest(context)) {
+                                    is UpdateCheckResult.Available -> {
+                                        updateInfo = result.update
+                                        updateStatus = "发现新版 ${result.update.versionName}"
+                                    }
+                                    is UpdateCheckResult.UpToDate -> {
+                                        updateInfo = null
+                                        updateStatus = "已是最新版本：${result.currentVersion}"
+                                    }
+                                    is UpdateCheckResult.Failed -> {
+                                        updateInfo = null
+                                        updateStatus = result.message
+                                    }
+                                }
+                                checkingUpdate = false
+                            }
+                        }
+                    )
+                    SettingsActionButton(
+                        text = "发布页",
+                        primary = false,
+                        theme = theme,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            openUrl(context, "https://github.com/Aecenas/Reminder/releases/latest")
+                        }
+                    )
+                }
+                updateInfo?.let { update ->
+                    SettingsActionButton(
+                        text = "下载新版 APK",
+                        primary = true,
+                        theme = theme,
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                !context.packageManager.canRequestPackageInstalls()
+                            ) {
+                                Toast.makeText(context, "请先允许安装未知应用。", Toast.LENGTH_SHORT).show()
+                                GitHubUpdateService.installPermissionIntent(context)
+                                    ?.let { runCatching { context.startActivity(it) } }
+                                return@SettingsActionButton
+                            }
+                            runCatching {
+                                GitHubUpdateService.enqueueApkDownload(context, update)
+                            }.onSuccess {
+                                Toast.makeText(context, "已开始下载，完成后点击下载通知安装。", Toast.LENGTH_LONG).show()
+                            }.onFailure {
+                                Toast.makeText(context, "下载失败：${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                }
+
+                SettingsActionButton(
+                    text = "关闭",
+                    primary = false,
+                    theme = theme,
+                    onClick = onDismiss
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsStatusLine(title: String, value: String, theme: VisualTheme) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, color = theme.text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Text(value, color = theme.mutedText, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun SettingsActionButton(
+    text: String,
+    primary: Boolean,
+    theme: VisualTheme,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .alpha(if (enabled) 1f else 0.55f)
+            .then(
+                if (primary) Modifier.selectedSoftPill(shape)
+                else Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.72f), shape)
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.70f), shape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = theme.text,
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private fun notificationSettingsIntent(context: android.content.Context): Intent =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        }
+    } else {
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+    }
+
+private fun openUrl(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 }
 

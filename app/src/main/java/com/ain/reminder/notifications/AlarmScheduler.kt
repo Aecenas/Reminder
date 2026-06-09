@@ -1,16 +1,13 @@
 package com.ain.reminder.notifications
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.AlarmManagerCompat
-import androidx.core.content.ContextCompat
 import com.ain.reminder.data.DoseGroup
 import com.ain.reminder.data.MedicationRepository
 import java.time.LocalDate
@@ -54,12 +51,7 @@ class AlarmScheduler(private val context: Context) {
             null
         }
 
-    fun notificationsAllowed(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
+    fun notificationsAllowed(): Boolean = ReminderNotifications.notificationsAllowed(context)
 
     companion object {
         const val EXTRA_REMINDER_DATE = "reminder_date"

@@ -1,12 +1,9 @@
 package com.ain.reminder.notifications
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.ain.reminder.MainActivity
@@ -35,7 +32,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val group = repository.groupsForDate(date)
                     .firstOrNull { time == null || it.time == time }
 
-                createChannel(context)
+                ReminderNotifications.createChannel(context)
                 val scheduler = AlarmScheduler(context)
                 if (group != null && scheduler.notificationsAllowed()) {
                     NotificationManagerCompat.from(context).notify(
@@ -58,7 +55,7 @@ class ReminderReceiver : BroadcastReceiver() {
         } else {
             "${group.time} 有 ${group.items.size} 项药需要服用"
         }
-        return NotificationCompat.Builder(context, CHANNEL_ID)
+        return NotificationCompat.Builder(context, ReminderNotifications.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("服药提醒")
             .setContentText(content)
@@ -83,19 +80,7 @@ class ReminderReceiver : BroadcastReceiver() {
         )
     }
 
-    private fun createChannel(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "服药提醒",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-    }
-
     companion object {
-        private const val CHANNEL_ID = "medication_reminders"
         private const val NOTIFICATION_ID = 1001
     }
 }
