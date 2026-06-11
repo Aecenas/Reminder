@@ -517,7 +517,7 @@ private fun ReminderScreen(
 
                         ReminderDateLabel(date = today, theme = theme)
 
-                        Spacer(Modifier.height(30.dp))
+                        Spacer(Modifier.height(18.dp))
 
                         ReminderTimeHeader(
                             group = group,
@@ -528,7 +528,7 @@ private fun ReminderScreen(
                             }
                         )
 
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(0.dp))
 
                         ReminderHoldTarget(
                             group = group,
@@ -557,7 +557,7 @@ private fun ReminderScreen(
                             }
                         )
 
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(12.dp))
 
                         ReminderTodayProgress(total = totalToday, completed = completedToday, theme = theme)
 
