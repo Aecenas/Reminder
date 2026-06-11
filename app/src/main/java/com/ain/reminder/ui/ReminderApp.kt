@@ -1,8 +1,10 @@
 ﻿package com.ain.reminder.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.AlarmClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -60,6 +62,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
@@ -91,6 +94,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -172,6 +177,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.min
@@ -198,6 +204,18 @@ private data class VisualTheme(
     val mutedText: Color,
     val glass: Color,
     val navGlass: Color
+)
+
+private data class SystemAlarmCandidate(
+    val time: LocalTime,
+    val dateLabel: String
+) {
+    val key: String = "${time}_${dateLabel}"
+}
+
+private data class LocalDateRange(
+    val start: LocalDate,
+    val end: LocalDate
 )
 
 private val VisualThemes = listOf(
@@ -380,26 +398,28 @@ private fun GlassNavItem(
                 }
             )
             .softClickable(onClick = onClick)
-            .padding(horizontal = if (selected) 8.dp else 4.dp),
+            .padding(horizontal = if (selected) 4.dp else 4.dp),
         contentAlignment = Alignment.Center
     ) {
         if (selected) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     screen.icon,
                     contentDescription = screen.label,
                     tint = contentColor,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
                 Text(
                     screen.label,
                     color = contentColor,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         } else {
@@ -614,12 +634,14 @@ private fun ReminderDateLabel(date: LocalDate, theme: VisualTheme, modifier: Mod
         ) {
             DateLeafDecor(modifier = Modifier.size(width = 25.dp, height = 23.dp))
             Text(
-                text = "${date.format(DateFormatter)}  ${ReminderWeekdayLabels.getValue(date.dayOfWeek)}",
+                text = date.format(DateFormatter),
                 color = theme.text,
                 fontFamily = FontFamily.Serif,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             DateLeafDecor(
                 mirrored = true,
@@ -740,9 +762,14 @@ private fun SettingsScreen(
     var aboutOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
     var versionOpen by remember { mutableStateOf(false) }
+    var systemAlarmConfirmOpen by remember { mutableStateOf(false) }
     var notificationsAllowed by remember { mutableStateOf(ReminderNotifications.notificationsAllowed(context)) }
     var exactAlarmAllowed by remember { mutableStateOf(alarmScheduler.canScheduleExactAlarms()) }
     val currentVersion = remember { GitHubUpdateService.currentVersionName(context) }
+    val prescriptions by remember {
+        medicationRepository.observePrescriptions()
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val systemAlarmCandidates = remember(prescriptions) { prescriptionAlarmCandidates(prescriptions) }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -780,6 +807,11 @@ private fun SettingsScreen(
                 Toast.makeText(context, "读取失败：${it.message}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
     }
 
     fun refreshPermissionState() {
@@ -832,36 +864,53 @@ private fun SettingsScreen(
                 SettingsSection(title = "通知与提醒", theme = theme) {
                     SettingsActionRow(
                         icon = Icons.Default.NotificationsNone,
-                        title = "服药提醒",
-                        subtitle = "打开系统通知设置",
+                        title = "通知权限",
+                        subtitle = "开启系统通知权限",
                         value = if (notificationsAllowed) "已开启" else "未开启",
                         theme = theme,
                         onClick = {
-                            sounds.play(SoundCue.SelectDrop)
-                            context.startActivity(notificationSettingsIntent(context))
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsAllowed) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                context.startActivity(notificationSettingsIntent(context))
+                            }
                         }
                     )
                     SettingsRowDivider(theme)
                     SettingsActionRow(
                         icon = Icons.Default.AccessTime,
-                        title = "闹钟提醒",
-                        subtitle = "开启准点提醒权限",
+                        title = "时钟权限",
+                        subtitle = "开启精准时钟权限",
                         value = if (exactAlarmAllowed) "已允许" else "建议开启",
                         theme = theme,
                         onClick = {
-                            sounds.play(SoundCue.SelectDrop)
                             alarmScheduler.exactAlarmSettingsIntent()
                                 ?.let { runCatching { context.startActivity(it) } }
+                                ?: Toast.makeText(context, "当前系统无需额外开启。", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.Alarm,
+                        title = "闹钟创建",
+                        subtitle = "创建药方涉及的系统闹钟",
+                        value = if (systemAlarmCandidates.isEmpty()) null else "${systemAlarmCandidates.size}项",
+                        theme = theme,
+                        onClick = {
+                            if (systemAlarmCandidates.isEmpty()) {
+                                Toast.makeText(context, "暂无可创建的药方时间。", Toast.LENGTH_SHORT).show()
+                            } else {
+                                systemAlarmConfirmOpen = true
+                            }
                         }
                     )
                     SettingsRowDivider(theme)
                     SettingsActionRow(
                         icon = Icons.Default.ChatBubbleOutline,
-                        title = "消息通知",
+                        title = "消息测试",
                         subtitle = "发送一条测试通知",
                         theme = theme,
                         onClick = {
-                            sounds.play(SoundCue.SelectDrop)
                             val sent = ReminderNotifications.showTestNotification(context)
                             Toast.makeText(
                                 context,
@@ -987,6 +1036,17 @@ private fun SettingsScreen(
                 }
             )
         }
+        if (systemAlarmConfirmOpen) {
+            SettingsConfirmSystemAlarmsDialog(
+                candidates = systemAlarmCandidates,
+                theme = theme,
+                onDismiss = { systemAlarmConfirmOpen = false },
+                onConfirm = { selected ->
+                    systemAlarmConfirmOpen = false
+                    createSystemAlarms(context, selected)
+                }
+            )
+        }
         if (aboutOpen) {
             SettingsInfoDialog(
                 title = "关于我们",
@@ -1036,6 +1096,61 @@ private fun settingsHelpText(theme: VisualTheme): AnnotatedString = buildAnnotat
     appendBullet("恢复提醒", "“数据导入”会替换当前本地数据，导入前请先确认备份来源。", Color(0xFF9F352F))
 }
 
+private fun prescriptionAlarmCandidates(prescriptions: List<PrescriptionWithTimes>): List<SystemAlarmCandidate> =
+    prescriptions
+        .filter { it.prescription.enabled }
+        .flatMap { prescription ->
+            prescription.times.mapNotNull { time ->
+                runCatching { LocalTime.parse(time.time) }.getOrNull()?.let { parsedTime ->
+                    parsedTime to prescription.prescription
+                }
+            }
+        }
+        .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+        .map { (time, items) ->
+            SystemAlarmCandidate(
+                time = time,
+                dateLabel = alarmDateLabel(items)
+            )
+        }
+        .sortedBy { it.time }
+
+private fun alarmDateLabel(prescriptions: List<com.ain.reminder.data.PrescriptionEntity>): String {
+    val ranges = prescriptions.mapNotNull { prescription ->
+        val start = runCatching { LocalDate.parse(prescription.startDate) }.getOrNull() ?: return@mapNotNull null
+        val end = prescription.endDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (end == null || ChronoUnit.DAYS.between(start, end) > 365) {
+            return "每日"
+        }
+        LocalDateRange(start = start, end = end)
+    }
+    val merged = mergeDateRanges(ranges)
+    if (merged.isEmpty()) return "每日"
+    val labels = merged.map { range ->
+        if (range.start == range.end) {
+            range.start.format(DateFormatter)
+        } else {
+            "${range.start.format(DateFormatter)}-${range.end.format(DateFormatter)}"
+        }
+    }
+    return if (labels.size <= 2) labels.joinToString("、") else "${labels.take(2).joinToString("、")}等${labels.size}段"
+}
+
+private fun mergeDateRanges(ranges: List<LocalDateRange>): List<LocalDateRange> {
+    if (ranges.isEmpty()) return emptyList()
+    val sorted = ranges.sortedWith(compareBy<LocalDateRange> { it.start }.thenBy { it.end })
+    val merged = mutableListOf<LocalDateRange>()
+    sorted.forEach { range ->
+        val last = merged.lastOrNull()
+        if (last == null || range.start.isAfter(last.end.plusDays(1))) {
+            merged += range
+        } else if (range.end.isAfter(last.end)) {
+            merged[merged.lastIndex] = last.copy(end = range.end)
+        }
+    }
+    return merged
+}
+
 private fun AnnotatedString.Builder.appendBullet(label: String, body: String, color: Color) {
     append("• ")
     withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) {
@@ -1078,6 +1193,208 @@ private fun SettingsConfirmImportDialog(
         titleContentColor = theme.text,
         textContentColor = Color(0xFF4E5F42)
     )
+}
+
+@Composable
+private fun SettingsConfirmSystemAlarmsDialog(
+    candidates: List<SystemAlarmCandidate>,
+    theme: VisualTheme,
+    onDismiss: () -> Unit,
+    onConfirm: (List<SystemAlarmCandidate>) -> Unit
+) {
+    var selectedKeys by remember(candidates) { mutableStateOf(candidates.map { it.key }.toSet()) }
+    val selected = candidates.filter { it.key in selectedKeys }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(30.dp),
+                    ambientColor = Color(0xFF7C9D51).copy(alpha = 0.16f),
+                    spotColor = Color(0xFF7C9D51).copy(alpha = 0.22f)
+                ),
+            color = Color.Transparent,
+            contentColor = theme.text,
+            shape = RoundedCornerShape(30.dp),
+            shadowElevation = 0.dp
+        ) {
+            Box {
+                Image(
+                    painter = painterResource(R.drawable.detail_editor_bg),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.matchParentSize()
+                )
+                Column(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 22.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "闹钟创建",
+                            color = Color(0xFF315D31),
+                            fontFamily = FontFamily.Serif,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                    }
+
+                    Text(
+                        "选择要创建到系统闹钟 App 的药方时间。下方日期是该时间涉及药方的日期并集；系统闹钟接口不支持写入有效期限，创建后的闹钟由系统闹钟 App 管理。",
+                        color = Color(0xFF4E5F42),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.12f
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        candidates.forEach { candidate ->
+                            SystemAlarmCandidateRow(
+                                candidate = candidate,
+                                checked = candidate.key in selectedKeys,
+                                theme = theme,
+                                onCheckedChange = { checked ->
+                                    selectedKeys = if (checked) {
+                                        selectedKeys + candidate.key
+                                    } else {
+                                        selectedKeys - candidate.key
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SettingsDialogButton(
+                            text = "取消",
+                            theme = theme,
+                            primary = false,
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss
+                        )
+                        SettingsDialogButton(
+                            text = "创建${selected.size}项",
+                            theme = theme,
+                            primary = true,
+                            enabled = selected.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onConfirm(selected) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SystemAlarmCandidateRow(
+    candidate: SystemAlarmCandidate,
+    checked: Boolean,
+    theme: VisualTheme,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFFFDF3).copy(alpha = 0.64f), shape)
+            .border(1.dp, Color.White.copy(alpha = 0.52f), shape)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = theme.accentDeep,
+                checkedBorderColor = theme.accentDeep,
+                uncheckedThumbColor = Color(0xFFEEF0E8),
+                uncheckedTrackColor = Color(0xFFB9C0AA).copy(alpha = 0.52f),
+                uncheckedBorderColor = Color(0xFF8A927A).copy(alpha = 0.38f)
+            )
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                candidate.time.format(TimeFormatter),
+                color = Color(0xFF315D31),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                candidate.dateLabel,
+                color = Color(0xFF6E6457),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsDialogButton(
+    text: String,
+    theme: VisualTheme,
+    primary: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier = modifier
+            .height(46.dp)
+            .alpha(if (enabled) 1f else 0.46f)
+            .then(
+                if (primary) {
+                    Modifier.selectedSoftPill(shape)
+                } else {
+                    Modifier.background(Color(0xFFFFFDF3).copy(alpha = 0.58f), shape)
+                }
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.66f), shape)
+            .softClickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = if (primary) Color(0xFF315D31) else theme.mutedText,
+            fontFamily = FontFamily.Serif,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
 }
 
 @Composable
@@ -1396,6 +1713,30 @@ private fun notificationSettingsIntent(context: android.content.Context): Intent
             data = Uri.parse("package:${context.packageName}")
         }
     }
+
+private fun systemAlarmIntent(time: LocalTime): Intent =
+    Intent(AlarmClock.ACTION_SET_ALARM).apply {
+        putExtra(AlarmClock.EXTRA_HOUR, time.hour)
+        putExtra(AlarmClock.EXTRA_MINUTES, time.minute)
+        putExtra(AlarmClock.EXTRA_MESSAGE, "服药提醒")
+        putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+    }
+
+private fun createSystemAlarms(context: android.content.Context, candidates: List<SystemAlarmCandidate>) {
+    var requested = 0
+    candidates.forEach { candidate ->
+        runCatching {
+            context.startActivity(systemAlarmIntent(candidate.time))
+        }.onSuccess {
+            requested += 1
+        }
+    }
+    Toast.makeText(
+        context,
+        if (requested > 0) "已请求创建${requested}个系统闹钟。" else "未找到可创建闹钟的系统应用。",
+        Toast.LENGTH_SHORT
+    ).show()
+}
 
 private fun openUrl(context: android.content.Context, url: String) {
     runCatching {
