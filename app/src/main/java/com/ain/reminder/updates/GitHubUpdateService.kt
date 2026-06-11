@@ -3,11 +3,16 @@ package com.ain.reminder.updates
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -25,6 +30,12 @@ sealed class UpdateCheckResult {
     data class Available(val currentVersion: String, val update: UpdateInfo) : UpdateCheckResult()
     data class UpToDate(val currentVersion: String, val latestVersion: String) : UpdateCheckResult()
     data class Failed(val message: String) : UpdateCheckResult()
+}
+
+sealed class DownloadProgress {
+    data class Running(val downloadedBytes: Long, val totalBytes: Long) : DownloadProgress()
+    data object Complete : DownloadProgress()
+    data class Failed(val reason: String) : DownloadProgress()
 }
 
 object GitHubUpdateService {
@@ -58,8 +69,8 @@ object GitHubUpdateService {
             } else {
                 UpdateCheckResult.UpToDate(currentVersion, latestVersion)
             }
-        }.getOrElse { error ->
-            UpdateCheckResult.Failed(error.message ?: "检查更新失败。")
+        }.getOrElse {
+            UpdateCheckResult.Failed("检查失败，请稍后重试。")
         }
     }
 
@@ -75,6 +86,27 @@ object GitHubUpdateService {
 
         return context.getSystemService(DownloadManager::class.java).enqueue(request)
     }
+
+    fun observeDownload(context: Context, downloadId: Long): Flow<DownloadProgress> = flow {
+        val manager = context.getSystemService(DownloadManager::class.java)
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        while (true) {
+            val progress = manager.query(query)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use DownloadProgress.Failed("下载任务不存在。")
+                when (cursor.intColumn(DownloadManager.COLUMN_STATUS)) {
+                    DownloadManager.STATUS_SUCCESSFUL -> DownloadProgress.Complete
+                    DownloadManager.STATUS_FAILED -> DownloadProgress.Failed("下载失败，请稍后重试。")
+                    else -> DownloadProgress.Running(
+                        downloadedBytes = cursor.longColumn(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR),
+                        totalBytes = cursor.longColumn(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    )
+                }
+            } ?: DownloadProgress.Failed("无法读取下载进度。")
+            emit(progress)
+            if (progress is DownloadProgress.Complete || progress is DownloadProgress.Failed) break
+            delay(500)
+        }
+    }.flowOn(Dispatchers.IO)
 
     fun installPermissionIntent(context: Context): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -118,4 +150,8 @@ object GitHubUpdateService {
 
     private fun String.versionNumbers(): List<Int> =
         Regex("\\d+").findAll(this).map { it.value.toIntOrNull() ?: 0 }.toList().ifEmpty { listOf(0) }
+
+    private fun Cursor.intColumn(name: String): Int = getInt(getColumnIndexOrThrow(name))
+
+    private fun Cursor.longColumn(name: String): Long = getLong(getColumnIndexOrThrow(name))
 }

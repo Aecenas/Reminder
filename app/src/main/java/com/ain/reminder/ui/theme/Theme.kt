@@ -1,7 +1,9 @@
 package com.ain.reminder.ui.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -49,7 +51,10 @@ fun ReminderTheme(content: @Composable () -> Unit) {
         Density(density = currentDensity.density, fontScale = 1f)
     }
 
-    CompositionLocalProvider(LocalDensity provides fixedFontDensity) {
+    CompositionLocalProvider(
+        LocalDensity provides fixedFontDensity,
+        LocalRippleConfiguration provides RippleConfiguration(color = Color.Transparent, rippleAlpha = null)
+    ) {
         MaterialTheme(
             colorScheme = LightColors,
             shapes = ReminderShapes,

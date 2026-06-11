@@ -2,7 +2,10 @@ package com.ain.reminder.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 
@@ -58,6 +61,12 @@ enum class DayMedicationStatus {
     Complete
 }
 
+enum class DueMedicationStatus {
+    None,
+    Incomplete,
+    Complete
+}
+
 class MedicationRepository(private val dao: PrescriptionDao) {
     fun observePrescriptions(): Flow<List<PrescriptionWithTimes>> =
         combine(dao.observePrescriptions(), dao.observePrescriptionTimes()) { prescriptions, times ->
@@ -93,6 +102,24 @@ class MedicationRepository(private val dao: PrescriptionDao) {
                     date = date
                 )
                 date to dayStatus(groups)
+            }
+        }
+
+    fun observeMonthDueStatuses(month: YearMonth, now: LocalDateTime): Flow<Map<LocalDate, DueMedicationStatus>> =
+        combine(
+            dao.observePrescriptions(),
+            dao.observePrescriptionTimes(),
+            dao.observeRecordsBetween(month.atDay(1).toString(), month.atEndOfMonth().toString())
+        ) { prescriptions, times, records ->
+            (1..month.lengthOfMonth()).associate { day ->
+                val date = month.atDay(day)
+                val groups = groupsForDate(
+                    prescriptions = prescriptions,
+                    times = times,
+                    records = records.filter { it.date == date.toString() },
+                    date = date
+                )
+                date to dueStatus(groups, now)
             }
         }
 
@@ -182,6 +209,104 @@ class MedicationRepository(private val dao: PrescriptionDao) {
         dao.deletePrescription(prescription)
     }
 
+    suspend fun exportBackupJson(): String {
+        val prescriptions = dao.getPrescriptions()
+        val times = dao.getPrescriptionTimes()
+        val records = dao.getIntakeRecords()
+        return JSONObject()
+            .put("format", "reminder-backup")
+            .put("version", 1)
+            .put("exportedAtMillis", System.currentTimeMillis())
+            .put("prescriptions", JSONArray().apply {
+                prescriptions.forEach { item ->
+                    put(
+                        JSONObject()
+                            .put("id", item.id)
+                            .put("name", item.name)
+                            .put("startDate", item.startDate)
+                            .putNullable("endDate", item.endDate)
+                            .put("enabled", item.enabled)
+                            .put("scheduleType", item.scheduleType)
+                            .putNullable("anchorDate", item.anchorDate)
+                            .putNullable("anchorDoseText", item.anchorDoseText)
+                            .putNullable("alternateDoseText", item.alternateDoseText)
+                    )
+                }
+            })
+            .put("times", JSONArray().apply {
+                times.forEach { item ->
+                    put(
+                        JSONObject()
+                            .put("id", item.id)
+                            .put("prescriptionId", item.prescriptionId)
+                            .put("time", item.time)
+                            .put("doseText", item.doseText)
+                            .put("mealTiming", item.mealTiming)
+                    )
+                }
+            })
+            .put("records", JSONArray().apply {
+                records.forEach { item ->
+                    put(
+                        JSONObject()
+                            .put("prescriptionId", item.prescriptionId)
+                            .put("date", item.date)
+                            .put("time", item.time)
+                            .put("medicineNameSnapshot", item.medicineNameSnapshot)
+                            .put("doseTextSnapshot", item.doseTextSnapshot)
+                            .put("taken", item.taken)
+                            .putNullable("confirmedAtMillis", item.confirmedAtMillis)
+                    )
+                }
+            })
+            .toString(2)
+    }
+
+    suspend fun importBackupJson(json: String) {
+        val root = JSONObject(json)
+        require(root.optString("format") == "reminder-backup") { "不是该吃药啦的备份文件。" }
+        require(root.optInt("version") == 1) { "备份版本暂不支持。" }
+
+        val prescriptions = root.getJSONArray("prescriptions").mapObjects { item ->
+            PrescriptionEntity(
+                id = item.getLong("id"),
+                name = item.getString("name"),
+                startDate = item.getString("startDate"),
+                endDate = item.nullableString("endDate"),
+                enabled = item.getBoolean("enabled"),
+                scheduleType = item.getString("scheduleType"),
+                anchorDate = item.nullableString("anchorDate"),
+                anchorDoseText = item.nullableString("anchorDoseText"),
+                alternateDoseText = item.nullableString("alternateDoseText")
+            )
+        }
+        val prescriptionIds = prescriptions.map { it.id }.toSet()
+        val times = root.getJSONArray("times").mapObjects { item ->
+            PrescriptionTimeEntity(
+                id = item.getLong("id"),
+                prescriptionId = item.getLong("prescriptionId"),
+                time = item.getString("time"),
+                doseText = item.getString("doseText"),
+                mealTiming = item.optString("mealTiming", MealTiming.AfterMeal.name)
+            )
+        }
+        require(times.all { it.prescriptionId in prescriptionIds }) { "备份中的服药时间数据不完整。" }
+
+        val records = root.optJSONArray("records")?.mapObjects { item ->
+            IntakeRecordEntity(
+                prescriptionId = item.getLong("prescriptionId"),
+                date = item.getString("date"),
+                time = item.getString("time"),
+                medicineNameSnapshot = item.getString("medicineNameSnapshot"),
+                doseTextSnapshot = item.getString("doseTextSnapshot"),
+                taken = item.getBoolean("taken"),
+                confirmedAtMillis = item.nullableLong("confirmedAtMillis")
+            )
+        } ?: emptyList()
+
+        dao.replaceAllData(prescriptions, times, records)
+    }
+
     private fun groupsForDate(
         prescriptions: List<PrescriptionEntity>,
         times: List<PrescriptionTimeEntity>,
@@ -240,6 +365,14 @@ class MedicationRepository(private val dao: PrescriptionDao) {
         }
     }
 
+    private fun dueStatus(groups: List<DoseGroup>, now: LocalDateTime): DueMedicationStatus {
+        val dueItems = groups
+            .flatMap { it.items }
+            .filter { !LocalDateTime.of(it.date, it.time).isAfter(now) }
+        if (dueItems.isEmpty()) return DueMedicationStatus.None
+        return if (dueItems.all { it.taken }) DueMedicationStatus.Complete else DueMedicationStatus.Incomplete
+    }
+
     private fun PrescriptionEntity.appliesOn(date: LocalDate): Boolean {
         val start = LocalDate.parse(startDate)
         val end = endDate?.let(LocalDate::parse)
@@ -253,4 +386,16 @@ class MedicationRepository(private val dao: PrescriptionDao) {
         val second = alternateDoseText?.takeIf { it.isNotBlank() } ?: time.doseText
         return ScheduleRules.alternatingDoseForDate(anchor, first, second, date)
     }
+
+    private fun JSONObject.putNullable(name: String, value: Any?): JSONObject =
+        put(name, value ?: JSONObject.NULL)
+
+    private fun JSONObject.nullableString(name: String): String? =
+        if (isNull(name)) null else getString(name)
+
+    private fun JSONObject.nullableLong(name: String): Long? =
+        if (isNull(name)) null else getLong(name)
+
+    private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
+        (0 until length()).map { index -> transform(getJSONObject(index)) }
 }

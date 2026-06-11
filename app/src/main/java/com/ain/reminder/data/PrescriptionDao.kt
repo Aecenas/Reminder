@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,9 @@ interface PrescriptionDao {
     @Query("SELECT * FROM prescription_times ORDER BY time ASC")
     suspend fun getPrescriptionTimes(): List<PrescriptionTimeEntity>
 
+    @Query("SELECT * FROM intake_records ORDER BY date ASC, time ASC")
+    suspend fun getIntakeRecords(): List<IntakeRecordEntity>
+
     @Query("SELECT * FROM intake_records WHERE date = :date")
     fun observeRecordsForDate(date: String): Flow<List<IntakeRecordEntity>>
 
@@ -33,6 +37,9 @@ interface PrescriptionDao {
 
     @Insert
     suspend fun insertPrescription(entity: PrescriptionEntity): Long
+
+    @Insert
+    suspend fun insertPrescriptions(entities: List<PrescriptionEntity>)
 
     @Update
     suspend fun updatePrescription(entity: PrescriptionEntity)
@@ -52,6 +59,32 @@ interface PrescriptionDao {
     @Insert
     suspend fun insertTimes(times: List<PrescriptionTimeEntity>)
 
+    @Insert
+    suspend fun insertRecords(records: List<IntakeRecordEntity>)
+
     @Upsert
     suspend fun upsertRecord(record: IntakeRecordEntity)
+
+    @Query("DELETE FROM intake_records")
+    suspend fun deleteAllRecords()
+
+    @Query("DELETE FROM prescription_times")
+    suspend fun deleteAllTimes()
+
+    @Query("DELETE FROM prescriptions")
+    suspend fun deleteAllPrescriptions()
+
+    @Transaction
+    suspend fun replaceAllData(
+        prescriptions: List<PrescriptionEntity>,
+        times: List<PrescriptionTimeEntity>,
+        records: List<IntakeRecordEntity>
+    ) {
+        deleteAllRecords()
+        deleteAllTimes()
+        deleteAllPrescriptions()
+        if (prescriptions.isNotEmpty()) insertPrescriptions(prescriptions)
+        if (times.isNotEmpty()) insertTimes(times)
+        if (records.isNotEmpty()) insertRecords(records)
+    }
 }

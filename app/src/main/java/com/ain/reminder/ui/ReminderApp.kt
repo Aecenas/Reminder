@@ -1,10 +1,12 @@
-package com.ain.reminder.ui
+﻿package com.ain.reminder.ui
 
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -17,6 +19,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -51,15 +54,27 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -77,8 +92,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -90,6 +107,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
@@ -110,19 +128,27 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ain.reminder.R
 import com.ain.reminder.data.DayMedicationStatus
 import com.ain.reminder.data.DoseGroup
+import com.ain.reminder.data.DueMedicationStatus
 import com.ain.reminder.data.MealTiming
 import com.ain.reminder.data.MedicationRepository
 import com.ain.reminder.data.PlannedIntake
@@ -133,24 +159,33 @@ import com.ain.reminder.data.ScheduleType
 import com.ain.reminder.notifications.AlarmScheduler
 import com.ain.reminder.notifications.ReminderNotifications
 import com.ain.reminder.updates.GitHubUpdateService
+import com.ain.reminder.updates.DownloadProgress
 import com.ain.reminder.updates.UpdateCheckResult
-import com.ain.reminder.updates.UpdateInfo
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
 
 private enum class Screen(val label: String, val icon: ImageVector) {
-    Reminder("提醒", Icons.Default.NotificationsNone),
-    Calendar("日历", Icons.Default.CalendarMonth),
-    Prescription("药方", Icons.AutoMirrored.Filled.Assignment)
+    Reminder("服药", Icons.Default.Medication),
+    Prescription("药方", Icons.AutoMirrored.Filled.Assignment),
+    Settings("设置", Icons.Default.Settings)
+}
+
+private enum class MedicationSubPage(val label: String) {
+    Reminder("提醒"),
+    Calendar("日历")
 }
 
 private data class VisualTheme(
@@ -238,12 +273,13 @@ fun ReminderApp(
                             initialReminderTime = initialReminderTime
                         )
 
-                        Screen.Calendar -> CalendarScreen(
+                        Screen.Prescription -> PrescriptionScreen(
                             medicationRepository = medicationRepository,
+                            alarmScheduler = alarmScheduler,
                             theme = theme
                         )
 
-                        Screen.Prescription -> PrescriptionScreen(
+                        Screen.Settings -> SettingsScreen(
                             medicationRepository = medicationRepository,
                             alarmScheduler = alarmScheduler,
                             theme = theme
@@ -295,24 +331,8 @@ private fun GlassNav(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp, vertical = 10.dp)
-            .shadow(
-                elevation = 10.dp,
-                shape = barShape,
-                ambientColor = Color(0xFF809D5B).copy(alpha = 0.20f),
-                spotColor = Color(0xFF809D5B).copy(alpha = 0.26f)
-            )
-            .background(
-                brush = Brush.horizontalGradient(
-                    listOf(
-                        Color(0xFFFEFCEB).copy(alpha = 0.86f),
-                        Color(0xFFF7F2C6).copy(alpha = 0.78f),
-                        Color(0xFFFEFCEB).copy(alpha = 0.88f)
-                    )
-                ),
-                shape = barShape
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.92f), barShape)
-            .border(2.dp, Color(0xFFD9CF82).copy(alpha = 0.28f), barShape)
+            .background(Color(0xFFFFFBEA).copy(alpha = 0.42f), barShape)
+            .border(1.dp, Color.White.copy(alpha = 0.58f), barShape)
             .padding(7.dp)
     ) {
         Row(
@@ -352,29 +372,14 @@ private fun GlassNavItem(
             .then(
                 if (selected) {
                     Modifier
-                        .shadow(
-                            elevation = 6.dp,
-                            shape = selectedShape,
-                            ambientColor = Color(0xFFD8C66B).copy(alpha = 0.20f),
-                            spotColor = Color(0xFFD8C66B).copy(alpha = 0.26f)
-                        )
-                        .background(
-                            brush = Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFFFCF9D7).copy(alpha = 0.96f),
-                                    Color(0xFFEFF3C8).copy(alpha = 0.86f),
-                                    Color(0xFFFCF9D7).copy(alpha = 0.92f)
-                                )
-                            ),
-                            shape = selectedShape
-                        )
-                        .border(1.dp, Color.White.copy(alpha = 0.94f), selectedShape)
-                        .border(2.dp, Color(0xFFD7CB82).copy(alpha = 0.32f), selectedShape)
+                        .background(Color(0xFFFFFBEA).copy(alpha = 0.62f), selectedShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.74f), selectedShape)
+                        .border(1.dp, Color(0xFFD7CB82).copy(alpha = 0.28f), selectedShape)
                 } else {
                     Modifier
                 }
             )
-            .clickable(onClick = onClick)
+            .softClickable(onClick = onClick)
             .padding(horizontal = if (selected) 8.dp else 4.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -438,7 +443,7 @@ private fun ReminderScreen(
     var initialSelectionApplied by remember { mutableStateOf(false) }
     var locallyCompletedGroupKey by remember { mutableStateOf<String?>(null) }
     var detailGroup by remember { mutableStateOf<DoseGroup?>(null) }
-    var appSettingsOpen by remember { mutableStateOf(false) }
+    var subPage by remember { mutableStateOf(MedicationSubPage.Reminder) }
 
     LaunchedEffect(groups.size) {
         selectedIndex = selectedIndex.coerceIn(0, (groups.size - 1).coerceAtLeast(0))
@@ -467,81 +472,98 @@ private fun ReminderScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
-                .padding(top = 42.dp, bottom = 18.dp),
+                .padding(top = 28.dp, bottom = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
+            MedicationSubPageSwitch(
+                current = subPage,
+                theme = theme,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ReminderDateLabel(date = today, theme = theme)
-                ReminderSettingsButton(
-                    theme = theme,
-                    onClick = {
-                        sounds.play(SoundCue.OpenBloom)
-                        appSettingsOpen = true
+                onSelect = { next ->
+                    if (subPage != next) sounds.play(SoundCue.SwitchLeaf)
+                    subPage = next
+                }
+            )
+
+            when (subPage) {
+                MedicationSubPage.Reminder -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Spacer(Modifier.height(26.dp))
+
+                        ReminderDateLabel(date = today, theme = theme)
+
+                        Spacer(Modifier.height(30.dp))
+
+                        ReminderTimeHeader(
+                            group = group,
+                            theme = theme,
+                            onShowDetails = {
+                                sounds.play(SoundCue.OpenBloom)
+                                detailGroup = it
+                            }
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        ReminderHoldTarget(
+                            group = group,
+                            theme = theme,
+                            completed = completed,
+                            hasPrevious = groups.size > 1,
+                            hasNext = groups.size > 1,
+                            onPrevious = {
+                                if (groups.isNotEmpty()) {
+                                    sounds.play(SoundCue.SwitchLeaf)
+                                    selectedIndex = if (selectedIndex == 0) groups.lastIndex else selectedIndex - 1
+                                }
+                            },
+                            onNext = {
+                                if (groups.isNotEmpty()) {
+                                    sounds.play(SoundCue.SwitchLeaf)
+                                    selectedIndex = if (selectedIndex == groups.lastIndex) 0 else selectedIndex + 1
+                                }
+                            },
+                            onConfirm = { doseGroup ->
+                                locallyCompletedGroupKey = doseGroup.key
+                                scope.launch {
+                                    medicationRepository.confirmGroup(doseGroup)
+                                    alarmScheduler.scheduleNext(medicationRepository)
+                                }
+                            }
+                        )
+
+                        Spacer(Modifier.height(20.dp))
+
+                        ReminderTodayProgress(total = totalToday, completed = completedToday, theme = theme)
+
+                        Spacer(Modifier.height(26.dp))
                     }
-                )
+                }
+
+                MedicationSubPage.Calendar -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Spacer(Modifier.height(18.dp))
+
+                        MedicationCalendarContent(
+                            medicationRepository = medicationRepository,
+                            theme = theme
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+                    }
+                }
             }
-
-            Spacer(Modifier.weight(0.20f))
-
-            ReminderTimeHeader(
-                group = group,
-                theme = theme,
-                onShowDetails = {
-                    sounds.play(SoundCue.OpenBloom)
-                    detailGroup = it
-                }
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            ReminderHoldTarget(
-                group = group,
-                theme = theme,
-                completed = completed,
-                hasPrevious = groups.size > 1,
-                hasNext = groups.size > 1,
-                onPrevious = {
-                    if (groups.isNotEmpty()) {
-                        sounds.play(SoundCue.SwitchLeaf)
-                        selectedIndex = if (selectedIndex == 0) groups.lastIndex else selectedIndex - 1
-                    }
-                },
-                onNext = {
-                    if (groups.isNotEmpty()) {
-                        sounds.play(SoundCue.SwitchLeaf)
-                        selectedIndex = if (selectedIndex == groups.lastIndex) 0 else selectedIndex + 1
-                    }
-                },
-                onConfirm = { doseGroup ->
-                    locallyCompletedGroupKey = doseGroup.key
-                    scope.launch {
-                        medicationRepository.confirmGroup(doseGroup)
-                        alarmScheduler.scheduleNext(medicationRepository)
-                    }
-                }
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            ReminderTodayProgress(total = totalToday, completed = completedToday, theme = theme)
-
-            Spacer(Modifier.weight(0.68f))
         }
-    }
-
-    if (appSettingsOpen) {
-        ReminderAppSettingsDialog(
-            alarmScheduler = alarmScheduler,
-            theme = theme,
-            onDismiss = {
-                sounds.play(SoundCue.CloseSoft)
-                appSettingsOpen = false
-            }
-        )
     }
 
     detailGroup?.let { doseGroup ->
@@ -574,147 +596,303 @@ private fun preferredReminderIndex(
 @Composable
 private fun ReminderDateLabel(date: LocalDate, theme: VisualTheme, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier,
-        color = Color(0xFFFFFBEA).copy(alpha = 0.42f),
+        modifier = modifier.shadow(
+            elevation = 6.dp,
+            shape = RoundedCornerShape(22.dp),
+            ambientColor = Color(0xFF7C9D51).copy(alpha = 0.08f),
+            spotColor = Color(0xFF7C9D51).copy(alpha = 0.10f)
+        ),
+        color = Color(0xFFFFFBEA).copy(alpha = 0.36f),
         contentColor = theme.text,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.40f))
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f))
     ) {
-        Text(
-            text = "${date.format(DateFormatter)}  ${ReminderWeekdayLabels.getValue(date.dayOfWeek)}",
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            color = theme.text,
-            fontFamily = FontFamily.Serif,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun ReminderSettingsButton(theme: VisualTheme, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .size(42.dp)
-            .clickable(onClick = onClick),
-        color = Color(0xFFFFFBEA).copy(alpha = 0.50f),
-        contentColor = theme.text,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.48f))
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Settings, contentDescription = "应用设置", modifier = Modifier.size(22.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            DateLeafDecor(modifier = Modifier.size(width = 25.dp, height = 23.dp))
+            Text(
+                text = "${date.format(DateFormatter)}  ${ReminderWeekdayLabels.getValue(date.dayOfWeek)}",
+                color = theme.text,
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            DateLeafDecor(
+                mirrored = true,
+                modifier = Modifier.size(width = 25.dp, height = 23.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun ReminderAppSettingsDialog(
-    alarmScheduler: AlarmScheduler,
+private fun DateLeafDecor(mirrored: Boolean = false, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.date_leaf),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = modifier.graphicsLayer { scaleX = if (mirrored) -1f else 1f }
+    )
+}
+
+@Composable
+private fun MedicationSubPageSwitch(
+    current: MedicationSubPage,
     theme: VisualTheme,
-    onDismiss: () -> Unit
+    modifier: Modifier = Modifier,
+    onSelect: (MedicationSubPage) -> Unit
+) {
+    val shape = RoundedCornerShape(36.dp)
+    Surface(
+        modifier = modifier
+            .height(72.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = shape,
+                ambientColor = Color(0xFF7C9D51).copy(alpha = 0.10f),
+                spotColor = Color(0xFF7C9D51).copy(alpha = 0.14f)
+            ),
+        color = Color.White.copy(alpha = 0.30f),
+        contentColor = theme.text,
+        shape = shape,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.66f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MedicationSubPage.entries.forEach { page ->
+                val selected = page == current
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .then(
+                            if (selected) {
+                                Modifier
+                                    .shadow(
+                                        elevation = 5.dp,
+                                        shape = RoundedCornerShape(30.dp),
+                                        ambientColor = Color(0xFF7C9D51).copy(alpha = 0.12f),
+                                        spotColor = Color(0xFF7C9D51).copy(alpha = 0.16f)
+                                    )
+                                    .background(Color(0xFFFFFEF4).copy(alpha = 0.88f), RoundedCornerShape(30.dp))
+                                    .border(1.dp, theme.accent.copy(alpha = 0.22f), RoundedCornerShape(30.dp))
+                            } else {
+                                Modifier.background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(30.dp))
+                            }
+                        )
+                        .clickable { onSelect(page) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (page == MedicationSubPage.Reminder) {
+                        Icon(
+                            Icons.Default.NotificationsNone,
+                            contentDescription = null,
+                            tint = if (selected) Color(0xFF315D31) else Color(0xFF6D746A).copy(alpha = 0.80f),
+                            modifier = Modifier.size(25.dp)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            tint = if (selected) Color(0xFF315D31) else Color(0xFF6D746A).copy(alpha = 0.80f),
+                            modifier = Modifier.size(25.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        page.label,
+                        color = if (selected) Color(0xFF315D31) else Color(0xFF6D746A).copy(alpha = 0.86f),
+                        fontFamily = FontFamily.Serif,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    medicationRepository: MedicationRepository,
+    alarmScheduler: AlarmScheduler,
+    theme: VisualTheme
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val sounds = LocalAppSounds.current
     var updateStatus by remember { mutableStateOf("尚未检查更新") }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var checkingUpdate by remember { mutableStateOf(false) }
-    val notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
-    val exactAlarmAllowed = alarmScheduler.canScheduleExactAlarms()
+    var downloadingUpdate by remember { mutableStateOf(false) }
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
+    var aboutOpen by remember { mutableStateOf(false) }
+    var helpOpen by remember { mutableStateOf(false) }
+    var versionOpen by remember { mutableStateOf(false) }
+    var notificationsAllowed by remember { mutableStateOf(ReminderNotifications.notificationsAllowed(context)) }
+    var exactAlarmAllowed by remember { mutableStateOf(alarmScheduler.canScheduleExactAlarms()) }
     val currentVersion = remember { GitHubUpdateService.currentVersionName(context) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFFFFBEA).copy(alpha = 0.97f),
-            contentColor = theme.text,
-            shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
-            shadowElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LeafMark(theme, modifier = Modifier.size(20.dp))
-                    Text(
-                        "应用设置",
-                        color = theme.text,
-                        fontFamily = FontFamily.Serif,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    LeafMark(theme, modifier = Modifier.size(20.dp))
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        sounds.play(SoundCue.SelectDrop)
+        scope.launch {
+            runCatching {
+                val backup = withContext(Dispatchers.IO) { medicationRepository.exportBackupJson() }
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.writer(Charsets.UTF_8).use { writer -> writer.write(backup) }
+                    } ?: error("无法写入备份文件。")
                 }
+            }.onSuccess {
+                Toast.makeText(context, "数据已导出。", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, "导出失败：${it.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        sounds.play(SoundCue.SelectDrop)
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: error("无法读取备份文件。")
+                }
+            }.onSuccess {
+                pendingImportJson = it
+            }.onFailure {
+                Toast.makeText(context, "读取失败：${it.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
-                HorizontalDivider(color = theme.text.copy(alpha = 0.14f), thickness = 0.7.dp)
+    fun refreshPermissionState() {
+        notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
+        exactAlarmAllowed = alarmScheduler.canScheduleExactAlarms()
+    }
 
-                SettingsStatusLine(
-                    title = "通知权限",
-                    value = if (notificationsAllowed) "已开启" else "未开启",
-                    theme = theme
-                )
-                SettingsActionButton(
-                    text = if (notificationsAllowed) "打开通知设置" else "去开启通知权限",
-                    primary = !notificationsAllowed,
-                    theme = theme,
-                    onClick = {
-                        sounds.play(SoundCue.SelectDrop)
-                        context.startActivity(notificationSettingsIntent(context))
-                    }
-                )
-                SettingsActionButton(
-                    text = "发送测试通知",
-                    primary = false,
-                    theme = theme,
-                    onClick = {
-                        sounds.play(SoundCue.SelectDrop)
-                        val sent = ReminderNotifications.showTestNotification(context)
-                        Toast.makeText(
-                            context,
-                            if (sent) "已发送测试通知。" else "通知权限未开启，无法发送测试通知。",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                )
+    LaunchedEffect(Unit) {
+        refreshPermissionState()
+    }
 
-                SettingsStatusLine(
-                    title = "准点提醒权限",
-                    value = if (exactAlarmAllowed) "已允许" else "建议开启",
-                    theme = theme
-                )
-                SettingsActionButton(
-                    text = "打开闹钟提醒权限",
-                    primary = !exactAlarmAllowed,
-                    theme = theme,
-                    onClick = {
-                        sounds.play(SoundCue.SelectDrop)
-                        alarmScheduler.exactAlarmSettingsIntent()?.let { runCatching { context.startActivity(it) } }
-                    }
-                )
+    DisposableEffect(lifecycleOwner, alarmScheduler) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshPermissionState()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-                HorizontalDivider(color = theme.text.copy(alpha = 0.14f), thickness = 0.7.dp)
-
-                SettingsStatusLine(title = "当前版本", value = currentVersion, theme = theme)
-                Text(
-                    updateStatus,
-                    color = theme.mutedText,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    SettingsActionButton(
-                        text = if (checkingUpdate) "检查中..." else "检查更新",
-                        primary = updateInfo == null,
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(top = 22.dp, bottom = 24.dp)
+        ) {
+            item {
+                SettingsSection(title = "数据管理", theme = theme) {
+                    SettingsActionRow(
+                        icon = Icons.Default.FileUpload,
+                        title = "数据导入",
+                        subtitle = "从备份文件恢复本地数据",
                         theme = theme,
-                        modifier = Modifier.weight(1f),
-                        enabled = !checkingUpdate,
+                        onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.FileDownload,
+                        title = "数据导出",
+                        subtitle = "导出处方、提醒时间与服药记录",
+                        theme = theme,
+                        onClick = { exportLauncher.launch("reminder-backup-${System.currentTimeMillis()}.json") }
+                    )
+                }
+            }
+
+            item {
+                SettingsSection(title = "通知与提醒", theme = theme) {
+                    SettingsActionRow(
+                        icon = Icons.Default.NotificationsNone,
+                        title = "服药提醒",
+                        subtitle = "打开系统通知设置",
+                        value = if (notificationsAllowed) "已开启" else "未开启",
+                        theme = theme,
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            context.startActivity(notificationSettingsIntent(context))
+                        }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.AccessTime,
+                        title = "闹钟提醒",
+                        subtitle = "开启准点提醒权限",
+                        value = if (exactAlarmAllowed) "已允许" else "建议开启",
+                        theme = theme,
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            alarmScheduler.exactAlarmSettingsIntent()
+                                ?.let { runCatching { context.startActivity(it) } }
+                        }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.ChatBubbleOutline,
+                        title = "消息通知",
+                        subtitle = "发送一条测试通知",
+                        theme = theme,
+                        onClick = {
+                            sounds.play(SoundCue.SelectDrop)
+                            val sent = ReminderNotifications.showTestNotification(context)
+                            Toast.makeText(
+                                context,
+                                if (sent) "已发送测试通知。" else "通知权限未开启，无法发送测试通知。",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }
+            }
+
+            item {
+                SettingsSection(title = "关于与帮助", theme = theme) {
+                    SettingsActionRow(
+                        icon = Icons.Default.Info,
+                        title = "当前版本",
+                        subtitle = currentVersion,
+                        theme = theme,
+                        onClick = { versionOpen = true }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.SystemUpdate,
+                        title = when {
+                            checkingUpdate -> "检查中..."
+                            downloadingUpdate -> "更新中"
+                            else -> "版本更新"
+                        },
+                        subtitle = updateStatus,
+                        enabled = !checkingUpdate && !downloadingUpdate,
+                        theme = theme,
                         onClick = {
                             sounds.play(SoundCue.SelectDrop)
                             checkingUpdate = true
@@ -722,15 +900,47 @@ private fun ReminderAppSettingsDialog(
                             scope.launch {
                                 when (val result = GitHubUpdateService.checkLatest(context)) {
                                     is UpdateCheckResult.Available -> {
-                                        updateInfo = result.update
-                                        updateStatus = "发现新版 ${result.update.versionName}"
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                            !context.packageManager.canRequestPackageInstalls()
+                                        ) {
+                                            updateStatus = "请先允许安装未知应用"
+                                            GitHubUpdateService.installPermissionIntent(context)
+                                                ?.let { runCatching { context.startActivity(it) } }
+                                            checkingUpdate = false
+                                            return@launch
+                                        }
+                                        checkingUpdate = false
+                                        downloadingUpdate = true
+                                        updateStatus = "更新中（0/-- MB）"
+                                        runCatching {
+                                            GitHubUpdateService.enqueueApkDownload(context, result.update)
+                                        }.onSuccess { downloadId ->
+                                            GitHubUpdateService.observeDownload(context, downloadId).collect { progress ->
+                                                when (progress) {
+                                                    is DownloadProgress.Running -> {
+                                                        updateStatus = "更新中（${formatBytes(progress.downloadedBytes)}/${formatBytes(progress.totalBytes)}）"
+                                                    }
+                                                    DownloadProgress.Complete -> {
+                                                        downloadingUpdate = false
+                                                        updateStatus = "更新完成"
+                                                        delay(3000)
+                                                        updateStatus = "完成后点击下载通知安装"
+                                                    }
+                                                    is DownloadProgress.Failed -> {
+                                                        downloadingUpdate = false
+                                                        updateStatus = progress.reason
+                                                    }
+                                                }
+                                            }
+                                        }.onFailure {
+                                            downloadingUpdate = false
+                                            updateStatus = "下载失败，请稍后重试。"
+                                        }
                                     }
                                     is UpdateCheckResult.UpToDate -> {
-                                        updateInfo = null
-                                        updateStatus = "已是最新版本：${result.currentVersion}"
+                                        updateStatus = "无需更新"
                                     }
                                     is UpdateCheckResult.Failed -> {
-                                        updateInfo = null
                                         updateStatus = result.message
                                     }
                                 }
@@ -738,98 +948,442 @@ private fun ReminderAppSettingsDialog(
                             }
                         }
                     )
-                    SettingsActionButton(
-                        text = "发布页",
-                        primary = false,
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.AccountCircle,
+                        title = "关于我们",
+                        subtitle = "查看应用说明和项目来源",
                         theme = theme,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            sounds.play(SoundCue.SelectDrop)
-                            openUrl(context, "https://github.com/Aecenas/Reminder/releases/latest")
-                        }
+                        onClick = { aboutOpen = true }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.AutoMirrored.Filled.HelpOutline,
+                        title = "使用帮助",
+                        subtitle = "查看备份、提醒和服药记录说明",
+                        theme = theme,
+                        onClick = { helpOpen = true }
                     )
                 }
-                updateInfo?.let { update ->
-                    SettingsActionButton(
-                        text = "下载新版 APK",
-                        primary = true,
-                        theme = theme,
-                        onClick = {
-                            sounds.play(SoundCue.SelectDrop)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                !context.packageManager.canRequestPackageInstalls()
-                            ) {
-                                Toast.makeText(context, "请先允许安装未知应用。", Toast.LENGTH_SHORT).show()
-                                GitHubUpdateService.installPermissionIntent(context)
-                                    ?.let { runCatching { context.startActivity(it) } }
-                                return@SettingsActionButton
-                            }
-                            runCatching {
-                                GitHubUpdateService.enqueueApkDownload(context, update)
-                            }.onSuccess {
-                                Toast.makeText(context, "已开始下载，完成后点击下载通知安装。", Toast.LENGTH_LONG).show()
-                            }.onFailure {
-                                Toast.makeText(context, "下载失败：${it.message}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    )
-                }
+            }
+        }
 
-                SettingsActionButton(
-                    text = "关闭",
-                    primary = false,
-                    theme = theme,
-                    onClick = onDismiss
+        pendingImportJson?.let { json ->
+            SettingsConfirmImportDialog(
+                theme = theme,
+                onDismiss = { pendingImportJson = null },
+                onConfirm = {
+                    pendingImportJson = null
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) { medicationRepository.importBackupJson(json) }
+                            alarmScheduler.scheduleNext(medicationRepository)
+                        }.onSuccess {
+                            Toast.makeText(context, "数据已导入。", Toast.LENGTH_SHORT).show()
+                        }.onFailure {
+                            Toast.makeText(context, "导入失败：${it.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            )
+        }
+        if (aboutOpen) {
+            SettingsInfoDialog(
+                title = "关于我们",
+                body = settingsAboutText(currentVersion, theme),
+                theme = theme,
+                onDismiss = { aboutOpen = false }
+            )
+        }
+        if (versionOpen) {
+            SettingsInfoDialog(
+                title = "当前版本",
+                body = settingsVersionText(currentVersion, theme),
+                theme = theme,
+                onDismiss = { versionOpen = false }
+            )
+        }
+        if (helpOpen) {
+            SettingsInfoDialog(
+                title = "使用帮助",
+                body = settingsHelpText(theme),
+                theme = theme,
+                onDismiss = { helpOpen = false }
+            )
+        }
+    }
+}
+
+private fun settingsAboutText(version: String, theme: VisualTheme): AnnotatedString = buildAnnotatedString {
+    appendBullet("应用定位", "本地优先的服药提醒与药方管理工具。", theme.accentDeep)
+    appendBullet("核心能力", "记录药方、提醒时间、服药状态与日历完成情况。", Color(0xFF7A8F2E))
+    appendBullet("数据方式", "数据保存在本机，可通过设置页导入/导出备份。", Color(0xFFB07A26))
+    appendBullet("当前版本", version, theme.accentDeep)
+    appendBullet("开发者", "Ain", Color(0xFF9F5B31))
+}
+
+private fun settingsVersionText(version: String, theme: VisualTheme): AnnotatedString = buildAnnotatedString {
+    appendBullet("当前版本", version, theme.accentDeep)
+    appendBullet("更新方式", "在设置页点击“版本更新”会连接 GitHub Release 检查新版。", Color(0xFF7A8F2E))
+    appendBullet("安装说明", "下载完成后，点击系统下载通知安装新版 APK。", Color(0xFFB07A26))
+}
+
+private fun settingsHelpText(theme: VisualTheme): AnnotatedString = buildAnnotatedString {
+    appendBullet("服药提醒", "在“服药-提醒”中查看今日提醒，长按中心区域确认服药。", theme.accentDeep)
+    appendBullet("服用日历", "在“服药-日历”中查看每天的完成、部分完成或待服用状态。", Color(0xFF7A8F2E))
+    appendBullet("药方管理", "在“药方”页新增、编辑、停用或删除药方和服药时间。", theme.accentDeep)
+    appendBullet("数据备份", "“数据导出”会生成 JSON 备份文件，建议定期保存。", Color(0xFFB07A26))
+    appendBullet("恢复提醒", "“数据导入”会替换当前本地数据，导入前请先确认备份来源。", Color(0xFF9F352F))
+}
+
+private fun AnnotatedString.Builder.appendBullet(label: String, body: String, color: Color) {
+    append("• ")
+    withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) {
+        append(label)
+    }
+    append("：")
+    append(body)
+    append("\n")
+}
+
+@Composable
+private fun SettingsConfirmImportDialog(
+    theme: VisualTheme,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("确认导入", color = theme.accentDeep, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = theme.mutedText, fontWeight = FontWeight.Bold)
+            }
+        },
+        title = {
+            Text("导入数据", color = theme.text, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Text(
+                "导入会用备份文件替换当前本地药方、提醒时间和服药记录。建议先导出当前数据作为备份。",
+                color = Color(0xFF4E5F42),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        containerColor = Color(0xFFFFFDF0),
+        titleContentColor = theme.text,
+        textContentColor = Color(0xFF4E5F42)
+    )
+}
+
+@Composable
+private fun SettingsInfoDialog(
+    title: String,
+    body: AnnotatedString,
+    theme: VisualTheme,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 28.dp)
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(30.dp),
+                    ambientColor = Color(0xFF7C9D51).copy(alpha = 0.16f),
+                    spotColor = Color(0xFF7C9D51).copy(alpha = 0.22f)
+                ),
+            color = Color.Transparent,
+            contentColor = theme.text,
+            shape = RoundedCornerShape(30.dp),
+            shadowElevation = 0.dp
+        ) {
+            Box {
+                Image(
+                    painter = painterResource(R.drawable.detail_editor_bg),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.matchParentSize()
                 )
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            title,
+                            color = Color(0xFF315D31),
+                            fontFamily = FontFamily.Serif,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        body,
+                        color = Color(0xFF4E5F42),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.18f
+                    )
+                    SettingsFooterButton(
+                        text = "知道了",
+                        icon = Icons.Default.CheckCircle,
+                        theme = theme,
+                        onClick = onDismiss
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SettingsStatusLine(title: String, value: String, theme: VisualTheme) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(title, color = theme.text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-        Text(value, color = theme.mutedText, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+private fun SettingsSection(
+    title: String,
+    theme: VisualTheme,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 2.dp)
+        ) {
+            LeafMark(theme, modifier = Modifier.size(18.dp))
+            Text(
+                title,
+                color = Color(0xFF315D31),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 7.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    ambientColor = Color(0xFF8AA36C).copy(alpha = 0.12f),
+                    spotColor = Color(0xFF8AA36C).copy(alpha = 0.16f)
+                ),
+            color = Color(0xFFFFFDF3).copy(alpha = 0.80f),
+            contentColor = theme.text,
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFFD9D7B8).copy(alpha = 0.46f))
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                content = content
+            )
+        }
     }
 }
 
 @Composable
-private fun SettingsActionButton(
-    text: String,
-    primary: Boolean,
-    theme: VisualTheme,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(18.dp)
-    Box(
-        modifier = modifier
-            .height(40.dp)
-            .alpha(if (enabled) 1f else 0.55f)
-            .then(
-                if (primary) Modifier.selectedSoftPill(shape)
-                else Modifier.background(Color(0xFFFFFDF0).copy(alpha = 0.72f), shape)
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.70f), shape)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
+private fun SettingsProfileRow(theme: VisualTheme, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 76.dp)
+            .softClickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text,
-            color = theme.text,
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+        Surface(
+            shape = CircleShape,
+            color = Color(0xFFEAF4C7),
+            contentColor = theme.text,
+            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.32f))
+        ) {
+            Icon(
+                Icons.Default.AccountCircle,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(9.dp)
+                    .size(42.dp)
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                "本地用户",
+                color = Color(0xFF203320),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "ID：本机数据",
+                color = Color(0xFF6E6457),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = theme.text,
+            modifier = Modifier.size(24.dp)
         )
     }
+}
+
+@Composable
+private fun SettingsActionRow(
+    icon: ImageVector,
+    title: String,
+    theme: VisualTheme,
+    subtitle: String? = null,
+    value: String? = null,
+    enabled: Boolean = true,
+    showChevron: Boolean = true,
+    onClick: (() -> Unit)? = null
+) {
+    val sounds = LocalAppSounds.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = if (subtitle == null) 58.dp else 72.dp)
+            .alpha(if (enabled) 1f else 0.55f)
+            .then(
+                if (onClick != null) {
+                    Modifier.softClickable(enabled = enabled) {
+                        sounds.play(SoundCue.SelectDrop)
+                        onClick()
+                    }
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 2.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = theme.text,
+            modifier = Modifier.size(25.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = Color(0xFF213021),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    color = Color(0xFF6E6457),
+                    fontFamily = FontFamily.Serif,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (value != null) {
+            Text(
+                value,
+                color = theme.text,
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (showChevron) {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = theme.text,
+                modifier = Modifier.size(23.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsFooterButton(
+    text: String,
+    icon: ImageVector,
+    theme: VisualTheme,
+    onClick: () -> Unit
+) {
+    val sounds = LocalAppSounds.current
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .selectedSoftPill(shape)
+            .border(1.dp, Color.White.copy(alpha = 0.70f), shape)
+            .softClickable {
+                sounds.play(SoundCue.SelectDrop)
+                onClick()
+            }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = Color(0xFF315D31), modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text,
+            color = Color(0xFF315D31),
+            fontFamily = FontFamily.Serif,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun SettingsRowDivider(theme: VisualTheme) {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 42.dp),
+        color = theme.text.copy(alpha = 0.14f),
+        thickness = 0.7.dp
+    )
+}
+
+private fun SettingsComingSoonToast(context: android.content.Context, name: String) {
+    Toast.makeText(context, "${name}暂未开放。", Toast.LENGTH_SHORT).show()
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "-- MB"
+    return String.format(Locale.US, "%.1f MB", bytes / 1024f / 1024f)
 }
 
 private fun notificationSettingsIntent(context: android.content.Context): Intent =
@@ -1527,27 +2081,35 @@ private fun ReminderStatusPill(taken: Boolean, theme: VisualTheme) {
 }
 
 @Composable
-private fun CalendarScreen(
+private fun MedicationCalendarContent(
     medicationRepository: MedicationRepository,
     theme: VisualTheme
 ) {
     val sounds = LocalAppSounds.current
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var calendarNow by remember { mutableStateOf(LocalDateTime.now()) }
     val statuses by remember(visibleMonth) {
         medicationRepository.observeMonthStatuses(visibleMonth)
+    }.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val dueStatuses by remember(visibleMonth, calendarNow) {
+        medicationRepository.observeMonthDueStatuses(visibleMonth, calendarNow)
     }.collectAsStateWithLifecycle(initialValue = emptyMap())
     val selectedGroups by remember(selectedDate) {
         medicationRepository.observeGroupsForDate(selectedDate)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val cells = remember(visibleMonth) { calendarCells(visibleMonth) }
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            calendarNow = LocalDateTime.now()
+            delay(60_000)
+        }
+    }
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp)
-            .padding(top = 34.dp, bottom = 132.dp),
+            .fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         MonthHeader(
@@ -1593,6 +2155,7 @@ private fun CalendarScreen(
                 CalendarDayCell(
                     cell = cell,
                     status = statuses[cell.date] ?: DayMedicationStatus.None,
+                    dueStatus = dueStatuses[cell.date] ?: DueMedicationStatus.None,
                     selected = cell.date == selectedDate,
                     theme = theme,
                     currentMonth = visibleMonth,
@@ -1646,6 +2209,7 @@ private fun MonthHeader(
 private fun CalendarDayCell(
     cell: CalendarCell,
     status: DayMedicationStatus,
+    dueStatus: DueMedicationStatus,
     selected: Boolean,
     theme: VisualTheme,
     currentMonth: YearMonth,
@@ -1664,24 +2228,47 @@ private fun CalendarDayCell(
         status == DayMedicationStatus.Complete -> theme.accentDeep.copy(alpha = 0.72f)
         else -> Color.White.copy(alpha = 0.34f)
     }
+    val capsuleSize = 22.dp
+    val capsuleHalfSize = 11.dp
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.92f)
             .alpha(alpha)
-            .clickable(onClick = onClick),
-        color = color,
-        contentColor = theme.text,
-        shape = MaterialTheme.shapes.small,
-        border = BorderStroke(width = if (selected) 2.dp else 1.dp, color = borderColor)
+            .softClickable(onClick = onClick)
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                cell.date.dayOfMonth.toString(),
-                color = theme.text,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+        Surface(
+            modifier = Modifier
+                .matchParentSize(),
+            color = color,
+            contentColor = theme.text,
+            shape = MaterialTheme.shapes.small,
+            border = BorderStroke(width = if (selected) 2.dp else 1.dp, color = borderColor)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    cell.date.dayOfMonth.toString(),
+                    color = theme.text,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        if (inMonth && dueStatus != DueMedicationStatus.None) {
+            val statusIcon = if (dueStatus == DueMedicationStatus.Complete) {
+                R.drawable.capsule_status_green
+            } else {
+                R.drawable.capsule_status_gray
+            }
+            Image(
+                painter = painterResource(statusIcon),
+                contentDescription = if (dueStatus == DueMedicationStatus.Complete) "当日已到点计划已全服" else "当日已到点计划有未服",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = capsuleHalfSize, y = -capsuleHalfSize)
+                    .size(capsuleSize)
             )
         }
     }
@@ -1853,7 +2440,7 @@ private fun CalendarMedicineChip(
                     color = if (selected) theme.accentDeep.copy(alpha = 0.60f) else Color.White.copy(alpha = 0.68f),
                     shape = shape
                 )
-                .clickable(onClick = onClick)
+                .softClickable(onClick = onClick)
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -2404,13 +2991,13 @@ private fun DeletePrescriptionDialog(
                     modifier = Modifier
                         .offset(x = maxWidth * 0.12f, y = maxHeight * 0.72f)
                         .size(width = maxWidth * 0.33f, height = maxHeight * 0.16f)
-                        .clickable(onClick = onDismiss)
+                        .softClickable(onClick = onDismiss)
                 )
                 Box(
                     modifier = Modifier
                         .offset(x = maxWidth * 0.52f, y = maxHeight * 0.72f)
                         .size(width = maxWidth * 0.36f, height = maxHeight * 0.16f)
-                        .clickable(onClick = onConfirm)
+                        .softClickable(onClick = onConfirm)
                 )
             }
         }
@@ -2958,7 +3545,7 @@ private fun FloralPickerButton(
                 }
             )
             .border(1.dp, Color.White.copy(alpha = 0.74f), shape)
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -3012,7 +3599,7 @@ private fun DetailHeader(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .size(42.dp)
-                .clickable(onClick = onBack),
+                .softClickable(onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -3205,7 +3792,7 @@ private fun DetailSmallChip(
     Surface(
         modifier = modifier
             .height(30.dp)
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         color = if (selected) selectedColor.copy(alpha = 0.88f) else Color(0xFFFFFBE8).copy(alpha = 0.50f),
         contentColor = if (danger && selected) Color(0xFF813728) else theme.text,
         shape = RoundedCornerShape(17.dp),
@@ -3332,7 +3919,7 @@ private fun DetailModeButton(
         modifier = modifier
             .height(40.dp)
             .then(if (selected) Modifier.shadow(3.dp, shape, clip = false) else Modifier)
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         color = Color.Transparent,
         contentColor = theme.text,
         shape = shape,
@@ -3377,6 +3964,15 @@ private fun Modifier.selectedSoftPill(shape: RoundedCornerShape): Modifier = thi
             cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
         )
     }
+
+private fun Modifier.softClickable(enabled: Boolean = true, onClick: () -> Unit): Modifier = composed {
+    clickable(
+        enabled = enabled,
+        indication = null,
+        interactionSource = remember { MutableInteractionSource() },
+        onClick = onClick
+    )
+}
 
 @Composable
 private fun DetailPlanHeader(theme: VisualTheme) {
@@ -3568,7 +4164,7 @@ private fun MealChipButton(
             .fillMaxSize()
             .padding(1.dp)
             .then(if (selected) Modifier.shadow(2.dp, shape, clip = false) else Modifier)
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         color = Color.Transparent,
         contentColor = theme.text,
         shape = shape,
@@ -3678,7 +4274,7 @@ private fun DetailAddSlotButton(theme: VisualTheme, onClick: () -> Unit) {
                     cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx())
                 )
             }
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -3706,7 +4302,7 @@ private fun DetailSaveButton(
         modifier = modifier
             .fillMaxWidth()
             .height(62.dp)
-            .clickable(onClick = onSave),
+            .softClickable(onClick = onSave),
         contentAlignment = Alignment.Center
     ) {
         Image(
@@ -3879,7 +4475,7 @@ private fun PrescriptionAddButton(onClick: () -> Unit, modifier: Modifier = Modi
     Box(
         modifier = modifier
             .size(112.dp)
-            .clickable(onClick = onClick),
+            .softClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Image(
@@ -4111,3 +4707,4 @@ private fun DayOfWeek.sundayBasedIndex(): Int = when (this) {
 }
 
 private fun themeForDate(): VisualTheme = VisualThemes.first()
+
