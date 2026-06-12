@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -1091,7 +1092,7 @@ private fun settingsVersionText(version: String, theme: VisualTheme): AnnotatedS
 private fun settingsHelpText(theme: VisualTheme): AnnotatedString = buildAnnotatedString {
     appendBullet("服药提醒", "在“服药-提醒”中查看今日提醒，长按中心区域确认服药。", theme.accentDeep)
     appendBullet("服用日历", "在“服药-日历”中查看每天的完成、部分完成或待服用状态。", Color(0xFF7A8F2E))
-    appendBullet("药方管理", "在“药方”页新增、编辑、停用或删除药方和服药时间。", theme.accentDeep)
+    appendBullet("药方管理", "在“药方”页新增、编辑、停用药方；长按药方卡片1.5秒可删除。", theme.accentDeep)
     appendBullet("数据备份", "“数据导出”会生成 JSON 备份文件，建议定期保存。", Color(0xFFB07A26))
     appendBullet("恢复提醒", "“数据导入”会替换当前本地数据，导入前请先确认备份来源。", Color(0xFF9F352F))
 }
@@ -4663,6 +4664,13 @@ private fun PrescriptionCard(
     onLongPressDelete: () -> Unit
 ) {
     val prescription = item.prescription
+    val deleteProgress = remember { Animatable(0f) }
+    val preparingDelete = deleteProgress.value > 0.001f
+    val cardScale by animateFloatAsState(
+        targetValue = if (preparingDelete) 0.985f else 1f,
+        animationSpec = tween(durationMillis = 160, easing = LinearEasing),
+        label = "prescription-delete-scale"
+    )
     val mainText = Color(0xFF1F4A29)
     val muted = Color(0xFF5E794B)
     val timeText = item.times.timeSummary()
@@ -4678,20 +4686,39 @@ private fun PrescriptionCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1365f / 680f)
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
             .pointerInput(prescription.id) {
                 detectTapGestures(
                     onPress = {
                         coroutineScope {
-                            var longPressed = false
+                            var progressStarted = false
+                            var deleteTriggered = false
                             val job = launch {
-                                delay(2000)
-                                longPressed = true
+                                deleteProgress.snapTo(0f)
+                                delay(500)
+                                progressStarted = true
+                                deleteProgress.animateTo(
+                                    targetValue = 1f,
+                                    animationSpec = tween(durationMillis = 1000, easing = LinearEasing)
+                                )
+                                deleteTriggered = true
                                 onLongPressDelete()
+                                deleteProgress.snapTo(0f)
                             }
                             val released = tryAwaitRelease()
                             job.cancel()
-                            if (released && !longPressed) {
+                            if (released && !progressStarted && !deleteTriggered) {
                                 onClick()
+                            } else if (!deleteTriggered) {
+                                launch {
+                                    deleteProgress.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(durationMillis = 180, easing = LinearEasing)
+                                    )
+                                }
                             }
                         }
                     }
@@ -4745,6 +4772,49 @@ private fun PrescriptionCard(
                 .offset(x = maxWidth * 0.59f, y = maxHeight * 0.65f)
                 .width(maxWidth * 0.34f)
         )
+        PrescriptionDeleteOverlay(progress = deleteProgress.value)
+    }
+}
+
+@Composable
+private fun PrescriptionDeleteOverlay(progress: Float) {
+    if (progress <= 0.001f) return
+    val overlayAlpha = (progress * 1.35f).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFB43A32).copy(alpha = 0.10f * overlayAlpha), RoundedCornerShape(24.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(66.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 5.dp.toPx()
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.78f),
+                    radius = size.minDimension / 2f,
+                    center = center
+                )
+                drawCircle(
+                    color = Color(0xFFB43A32).copy(alpha = 0.16f),
+                    radius = size.minDimension / 2f - strokeWidth / 2f,
+                    center = center,
+                    style = Stroke(width = strokeWidth)
+                )
+                drawArc(
+                    color = Color(0xFFE14B42),
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.coerceIn(0f, 1f),
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "长按删除",
+                tint = Color(0xFFE14B42),
+                modifier = Modifier.size(30.dp)
+            )
+        }
     }
 }
 
