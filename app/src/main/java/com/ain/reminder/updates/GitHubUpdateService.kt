@@ -108,6 +108,20 @@ object GitHubUpdateService {
         }
     }.flowOn(Dispatchers.IO)
 
+    fun openDownloadedApkInstaller(context: Context, downloadId: Long): Boolean {
+        val manager = context.getSystemService(DownloadManager::class.java)
+        val uri = manager.getUriForDownloadedFile(downloadId) ?: return false
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
     fun installPermissionIntent(context: Context): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {

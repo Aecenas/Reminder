@@ -766,6 +766,9 @@ private fun SettingsScreen(
     var systemAlarmConfirmOpen by remember { mutableStateOf(false) }
     var notificationsAllowed by remember { mutableStateOf(ReminderNotifications.notificationsAllowed(context)) }
     var exactAlarmAllowed by remember { mutableStateOf(alarmScheduler.canScheduleExactAlarms()) }
+    var installPackagesAllowed by remember {
+        mutableStateOf(Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls())
+    }
     val currentVersion = remember { GitHubUpdateService.currentVersionName(context) }
     val prescriptions by remember {
         medicationRepository.observePrescriptions()
@@ -818,6 +821,7 @@ private fun SettingsScreen(
     fun refreshPermissionState() {
         notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
         exactAlarmAllowed = alarmScheduler.canScheduleExactAlarms()
+        installPackagesAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
     }
 
     LaunchedEffect(Unit) {
@@ -886,6 +890,19 @@ private fun SettingsScreen(
                         theme = theme,
                         onClick = {
                             alarmScheduler.exactAlarmSettingsIntent()
+                                ?.let { runCatching { context.startActivity(it) } }
+                                ?: Toast.makeText(context, "当前系统无需额外开启。", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.SystemUpdate,
+                        title = "安装权限",
+                        subtitle = "允许安装新版 APK",
+                        value = if (installPackagesAllowed) "已允许" else "未允许",
+                        theme = theme,
+                        onClick = {
+                            GitHubUpdateService.installPermissionIntent(context)
                                 ?.let { runCatching { context.startActivity(it) } }
                                 ?: Toast.makeText(context, "当前系统无需额外开启。", Toast.LENGTH_SHORT).show()
                         }
@@ -973,8 +990,13 @@ private fun SettingsScreen(
                                                     DownloadProgress.Complete -> {
                                                         downloadingUpdate = false
                                                         updateStatus = "更新完成"
+                                                        val installerOpened = GitHubUpdateService.openDownloadedApkInstaller(context, downloadId)
                                                         delay(3000)
-                                                        updateStatus = "完成后点击下载通知安装"
+                                                        updateStatus = if (installerOpened) {
+                                                            "请按系统提示完成安装"
+                                                        } else {
+                                                            "完成后点击下载通知安装"
+                                                        }
                                                     }
                                                     is DownloadProgress.Failed -> {
                                                         downloadingUpdate = false
@@ -1086,7 +1108,7 @@ private fun settingsAboutText(version: String, theme: VisualTheme): AnnotatedStr
 private fun settingsVersionText(version: String, theme: VisualTheme): AnnotatedString = buildAnnotatedString {
     appendBullet("当前版本", version, theme.accentDeep)
     appendBullet("更新方式", "在设置页点击“版本更新”会连接 GitHub Release 检查新版。", Color(0xFF7A8F2E))
-    appendBullet("安装说明", "下载完成后，点击系统下载通知安装新版 APK。", Color(0xFFB07A26))
+    appendBullet("安装说明", "下载完成后会尝试自动打开安装界面；若被系统拦截，可点击下载通知安装。", Color(0xFFB07A26))
 }
 
 private fun settingsHelpText(theme: VisualTheme): AnnotatedString = buildAnnotatedString {
