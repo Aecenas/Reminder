@@ -1,9 +1,11 @@
 ﻿package com.ain.reminder.ui
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.AlarmClock
 import android.provider.Settings
 import android.widget.Toast
@@ -764,11 +766,13 @@ private fun SettingsScreen(
     var helpOpen by remember { mutableStateOf(false) }
     var versionOpen by remember { mutableStateOf(false) }
     var systemAlarmConfirmOpen by remember { mutableStateOf(false) }
+    var backgroundProtectionOpen by remember { mutableStateOf(false) }
     var notificationsAllowed by remember { mutableStateOf(ReminderNotifications.notificationsAllowed(context)) }
     var exactAlarmAllowed by remember { mutableStateOf(alarmScheduler.canScheduleExactAlarms()) }
     var installPackagesAllowed by remember {
         mutableStateOf(Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls())
     }
+    var batteryUnrestricted by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     val currentVersion = remember { GitHubUpdateService.currentVersionName(context) }
     val prescriptions by remember {
         medicationRepository.observePrescriptions()
@@ -822,6 +826,7 @@ private fun SettingsScreen(
         notificationsAllowed = ReminderNotifications.notificationsAllowed(context)
         exactAlarmAllowed = alarmScheduler.canScheduleExactAlarms()
         installPackagesAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+        batteryUnrestricted = isIgnoringBatteryOptimizations(context)
     }
 
     LaunchedEffect(Unit) {
@@ -893,6 +898,15 @@ private fun SettingsScreen(
                                 ?.let { runCatching { context.startActivity(it) } }
                                 ?: Toast.makeText(context, "当前系统无需额外开启。", Toast.LENGTH_SHORT).show()
                         }
+                    )
+                    SettingsRowDivider(theme)
+                    SettingsActionRow(
+                        icon = Icons.Default.Settings,
+                        title = "后台运行保护",
+                        subtitle = "允许退出后继续准时提醒",
+                        value = if (batteryUnrestricted) "建议检查" else "需配置",
+                        theme = theme,
+                        onClick = { backgroundProtectionOpen = true }
                     )
                     SettingsRowDivider(theme)
                     SettingsActionRow(
@@ -1067,6 +1081,26 @@ private fun SettingsScreen(
                 onConfirm = { selected ->
                     systemAlarmConfirmOpen = false
                     createSystemAlarms(context, selected)
+                }
+            )
+        }
+        if (backgroundProtectionOpen) {
+            BackgroundProtectionDialog(
+                theme = theme,
+                batteryUnrestricted = batteryUnrestricted,
+                onDismiss = { backgroundProtectionOpen = false },
+                onOpenBattery = {
+                    runCatching { context.startActivity(batteryOptimizationIntent(context)) }
+                        .onFailure { Toast.makeText(context, "无法打开电池优化设置。", Toast.LENGTH_SHORT).show() }
+                },
+                onOpenAutostart = {
+                    if (!openManufacturerAutostartSettings(context)) {
+                        Toast.makeText(context, "未找到厂商自启动页面，请在系统设置中搜索自启动或后台运行。", Toast.LENGTH_LONG).show()
+                    }
+                },
+                onOpenAppDetails = {
+                    runCatching { context.startActivity(appDetailsIntent(context)) }
+                        .onFailure { Toast.makeText(context, "无法打开应用详情页。", Toast.LENGTH_SHORT).show() }
                 }
             )
         }
@@ -1421,6 +1455,148 @@ private fun SettingsDialogButton(
 }
 
 @Composable
+private fun BackgroundProtectionDialog(
+    theme: VisualTheme,
+    batteryUnrestricted: Boolean,
+    onDismiss: () -> Unit,
+    onOpenBattery: () -> Unit,
+    onOpenAutostart: () -> Unit,
+    onOpenAppDetails: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(30.dp),
+                    ambientColor = Color(0xFF7C9D51).copy(alpha = 0.16f),
+                    spotColor = Color(0xFF7C9D51).copy(alpha = 0.22f)
+                ),
+            color = Color.Transparent,
+            contentColor = theme.text,
+            shape = RoundedCornerShape(30.dp),
+            shadowElevation = 0.dp
+        ) {
+            Box {
+                Image(
+                    painter = painterResource(R.drawable.detail_editor_bg),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.matchParentSize()
+                )
+                Column(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 22.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "后台运行保护",
+                            color = Color(0xFF315D31),
+                            fontFamily = FontFamily.Serif,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        LeafMark(theme, modifier = Modifier.size(22.dp))
+                    }
+
+                    Text(
+                        "不同手机的自启动、后台启动和后台运行入口不统一。这里会尽量跳转到对应设置；若无法直达，请在系统设置中搜索“自启动”“后台运行”或“电池”。",
+                        color = Color(0xFF4E5F42),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.16f
+                    )
+
+                    BackgroundProtectionAction(
+                        title = "电池不受限制",
+                        subtitle = if (batteryUnrestricted) "当前已允许忽略电池优化" else "建议开启，避免息屏后提醒延迟",
+                        theme = theme,
+                        onClick = onOpenBattery
+                    )
+                    BackgroundProtectionAction(
+                        title = "自启动 / 后台启动",
+                        subtitle = "按当前手机品牌尝试打开厂商权限页",
+                        theme = theme,
+                        onClick = onOpenAutostart
+                    )
+                    BackgroundProtectionAction(
+                        title = "应用详情设置",
+                        subtitle = "从系统应用详情里手动检查后台和电池权限",
+                        theme = theme,
+                        onClick = onOpenAppDetails
+                    )
+
+                    SettingsFooterButton(
+                        text = "知道了",
+                        icon = Icons.Default.CheckCircle,
+                        theme = theme,
+                        onClick = onDismiss
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundProtectionAction(
+    title: String,
+    subtitle: String,
+    theme: VisualTheme,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFFFDF3).copy(alpha = 0.64f), shape)
+            .border(1.dp, Color.White.copy(alpha = 0.52f), shape)
+            .softClickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                title,
+                color = Color(0xFF315D31),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                subtitle,
+                color = Color(0xFF6E6457),
+                fontFamily = FontFamily.Serif,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = theme.text,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+@Composable
 private fun SettingsInfoDialog(
     title: String,
     body: AnnotatedString,
@@ -1735,6 +1911,69 @@ private fun notificationSettingsIntent(context: android.content.Context): Intent
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:${context.packageName}")
         }
+    }
+
+private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+    val powerManager = context.getSystemService(PowerManager::class.java)
+    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+private fun batteryOptimizationIntent(context: android.content.Context): Intent =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isIgnoringBatteryOptimizations(context)) {
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+    } else {
+        appDetailsIntent(context)
+    }
+
+private fun appDetailsIntent(context: android.content.Context): Intent =
+    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+        data = Uri.parse("package:${context.packageName}")
+    }
+
+private fun openManufacturerAutostartSettings(context: android.content.Context): Boolean {
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.US)
+    val candidates = buildList {
+        if ("xiaomi" in manufacturer || "redmi" in manufacturer) {
+            add(componentIntent("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))
+            add(componentIntent("com.miui.securitycenter", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
+        }
+        if ("huawei" in manufacturer) {
+            add(componentIntent("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
+            add(componentIntent("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"))
+        }
+        if ("honor" in manufacturer) {
+            add(componentIntent("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
+            add(componentIntent("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
+        }
+        if ("oppo" in manufacturer || "realme" in manufacturer || "oneplus" in manufacturer) {
+            add(componentIntent("com.oplus.safecenter", "com.oplus.safecenter.startupapp.StartupAppListActivity"))
+            add(componentIntent("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"))
+        }
+        if ("vivo" in manufacturer || "iqoo" in manufacturer) {
+            add(componentIntent("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
+            add(componentIntent("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"))
+        }
+        if ("meizu" in manufacturer) {
+            add(componentIntent("com.meizu.safe", "com.meizu.safe.security.SHOW_APPSEC"))
+        }
+    }
+    return candidates.any { intent ->
+        runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+}
+
+private fun componentIntent(packageName: String, className: String): Intent =
+    Intent().apply {
+        component = ComponentName(packageName, className)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
 private fun systemAlarmIntent(time: LocalTime): Intent =
